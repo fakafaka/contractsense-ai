@@ -2,13 +2,12 @@ import { z } from "zod";
 import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { analyzeContract, extractTextFromPDF } from "./contract-analyzer";
 import { storagePut } from "./storage";
 
 export const appRouter = router({
-  // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
@@ -21,41 +20,22 @@ export const appRouter = router({
     }),
   }),
 
-  // Contract analysis features
+  // Contract analysis features (no authentication required)
   contracts: router({
-    // Get user's subscription info and usage
-    getUsage: protectedProcedure.query(async ({ ctx }) => {
-      const usage = await db.canUserAnalyze(ctx.user.id);
-      const subscription = await db.getUserSubscription(ctx.user.id);
-      return {
-        ...usage,
-        plan: subscription?.plan || "free",
-        analysesThisMonth: subscription?.analysesThisMonth || 0,
-      };
-    }),
-
     // Upload and analyze a contract (text)
-    analyzeText: protectedProcedure
+    analyzeText: publicProcedure
       .input(
         z.object({
           name: z.string().min(1).max(255),
           text: z.string().min(10),
         })
       )
-      .mutation(async ({ ctx, input }) => {
+      .mutation(async ({ input }) => {
         const startTime = Date.now();
 
-        // Check if user can analyze
-        const usage = await db.canUserAnalyze(ctx.user.id);
-        if (!usage.canAnalyze) {
-          throw new Error(
-            `You've reached your monthly limit of ${usage.limit} analyses. Upgrade to Premium for unlimited analyses.`
-          );
-        }
-
-        // Create contract record
+        // Create contract record (no user ID)
         const contractId = await db.createContract({
-          userId: ctx.user.id,
+          userId: 0, // No user authentication
           name: input.name,
           contentType: "text",
           originalText: input.text,
@@ -67,7 +47,7 @@ export const appRouter = router({
         // Save analysis
         const analysisId = await db.createAnalysis({
           contractId,
-          userId: ctx.user.id,
+          userId: 0, // No user authentication
           summary: analysis.summary,
           mainObligations: JSON.stringify(analysis.mainObligations),
           potentialRisks: JSON.stringify(analysis.potentialRisks),
@@ -75,9 +55,6 @@ export const appRouter = router({
           riskLevel: analysis.riskLevel,
           processingTimeMs: Date.now() - startTime,
         });
-
-        // Increment usage counter
-        await db.incrementAnalysisCount(ctx.user.id);
 
         return {
           contractId,
@@ -87,7 +64,7 @@ export const appRouter = router({
       }),
 
     // Upload and analyze a contract (PDF)
-    analyzePDF: protectedProcedure
+    analyzePDF: publicProcedure
       .input(
         z.object({
           name: z.string().min(1).max(255),
@@ -95,20 +72,12 @@ export const appRouter = router({
           fileSize: z.number(),
         })
       )
-      .mutation(async ({ ctx, input }) => {
+      .mutation(async ({ input }) => {
         const startTime = Date.now();
 
         // Check file size (10MB limit)
         if (input.fileSize > 10 * 1024 * 1024) {
           throw new Error("PDF file size must be less than 10MB");
-        }
-
-        // Check if user can analyze
-        const usage = await db.canUserAnalyze(ctx.user.id);
-        if (!usage.canAnalyze) {
-          throw new Error(
-            `You've reached your monthly limit of ${usage.limit} analyses. Upgrade to Premium for unlimited analyses.`
-          );
         }
 
         // Decode base64 PDF
@@ -122,12 +91,12 @@ export const appRouter = router({
         }
 
         // Upload PDF to storage
-        const fileKey = `contracts/${ctx.user.id}/${Date.now()}-${input.name}`;
+        const fileKey = `contracts/anonymous/${Date.now()}-${input.name}`;
         const { url: fileUrl } = await storagePut(fileKey, pdfBuffer, "application/pdf");
 
-        // Create contract record
+        // Create contract record (no user ID)
         const contractId = await db.createContract({
-          userId: ctx.user.id,
+          userId: 0, // No user authentication
           name: input.name,
           contentType: "pdf",
           originalText: text,
@@ -141,7 +110,7 @@ export const appRouter = router({
         // Save analysis
         const analysisId = await db.createAnalysis({
           contractId,
-          userId: ctx.user.id,
+          userId: 0, // No user authentication
           summary: analysis.summary,
           mainObligations: JSON.stringify(analysis.mainObligations),
           potentialRisks: JSON.stringify(analysis.potentialRisks),
@@ -150,9 +119,6 @@ export const appRouter = router({
           processingTimeMs: Date.now() - startTime,
         });
 
-        // Increment usage counter
-        await db.incrementAnalysisCount(ctx.user.id);
-
         return {
           contractId,
           analysisId,
@@ -160,9 +126,9 @@ export const appRouter = router({
         };
       }),
 
-    // Get all user's contracts with analyses
-    list: protectedProcedure.query(async ({ ctx }) => {
-      const contractsWithAnalyses = await db.getUserContractsWithAnalyses(ctx.user.id);
+    // Get all contracts with analyses (no user filter)
+    list: publicProcedure.query(async () => {
+      const contractsWithAnalyses = await db.getAllContractsWithAnalyses();
       return contractsWithAnalyses.map((item) => ({
         contract: item.contract,
         analysis: item.analysis
@@ -177,17 +143,12 @@ export const appRouter = router({
     }),
 
     // Get a specific analysis
-    getAnalysis: protectedProcedure
+    getAnalysis: publicProcedure
       .input(z.object({ analysisId: z.number() }))
-      .query(async ({ ctx, input }) => {
+      .query(async ({ input }) => {
         const analysis = await db.getAnalysisById(input.analysisId);
         if (!analysis) {
           throw new Error("Analysis not found");
-        }
-
-        // Verify ownership
-        if (analysis.userId !== ctx.user.id) {
-          throw new Error("Unauthorized");
         }
 
         const contract = await db.getContractById(analysis.contractId);
@@ -204,17 +165,12 @@ export const appRouter = router({
       }),
 
     // Delete a contract and its analysis
-    delete: protectedProcedure
+    delete: publicProcedure
       .input(z.object({ contractId: z.number() }))
-      .mutation(async ({ ctx, input }) => {
+      .mutation(async ({ input }) => {
         const contract = await db.getContractById(input.contractId);
         if (!contract) {
           throw new Error("Contract not found");
-        }
-
-        // Verify ownership
-        if (contract.userId !== ctx.user.id) {
-          throw new Error("Unauthorized");
         }
 
         await db.deleteContract(input.contractId);

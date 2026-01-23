@@ -3,7 +3,6 @@ import { router } from "expo-router";
 import { useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -11,7 +10,6 @@ import { useColors } from "@/hooks/use-colors";
 
 export default function UploadScreen() {
   const colors = useColors();
-  const { isAuthenticated } = useAuth();
   const [uploadMethod, setUploadMethod] = useState<"pdf" | "text" | null>(null);
   const [pdfFile, setPdfFile] = useState<{ name: string; uri: string; size: number } | null>(null);
   const [contractText, setContractText] = useState("");
@@ -108,29 +106,20 @@ export default function UploadScreen() {
     }
   };
 
-  if (!isAuthenticated) {
-    return (
-      <ScreenContainer className="p-6 items-center justify-center">
-        <Text className="text-xl font-semibold text-foreground">Please sign in to continue</Text>
-        <TouchableOpacity
-          className="bg-primary px-6 py-3 rounded-full mt-4"
-          style={{ opacity: 1 }}
-          onPress={() => router.replace("/login" as any)}
-        >
-          <Text className="text-white font-semibold">Sign In</Text>
-        </TouchableOpacity>
-      </ScreenContainer>
-    );
-  }
-
+  // Processing Screen
   if (isAnalyzing) {
     return (
       <ScreenContainer className="p-6 items-center justify-center">
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text className="text-lg font-semibold text-foreground mt-4">Analyzing Contract...</Text>
-        <Text className="text-sm text-muted mt-2 text-center max-w-xs">
+        <Text className="text-2xl font-bold text-foreground mt-6">Analyzing Contract...</Text>
+        <Text className="text-base text-muted mt-3 text-center max-w-xs">
           This may take 10-30 seconds
         </Text>
+        <View className="mt-8 bg-surface rounded-xl p-5 border border-border max-w-sm">
+          <Text className="text-sm text-muted text-center leading-relaxed">
+            Our AI is reading your contract and identifying key terms, obligations, risks, and red flags.
+          </Text>
+        </View>
       </ScreenContainer>
     );
   }

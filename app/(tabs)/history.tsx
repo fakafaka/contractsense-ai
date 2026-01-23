@@ -1,7 +1,6 @@
 import { ScrollView, Text, View, TouchableOpacity, ActivityIndicator, TextInput } from "react-native";
 import { router } from "expo-router";
 import { useState } from "react";
-import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -9,45 +8,15 @@ import { useColors } from "@/hooks/use-colors";
 
 export default function HistoryScreen() {
   const colors = useColors();
-  const { isAuthenticated, loading: authLoading } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   
-  const { data: contracts, isLoading, refetch } = trpc.contracts.list.useQuery(undefined, {
-    enabled: isAuthenticated,
-  });
+  const { data: contracts, isLoading, refetch } = trpc.contracts.list.useQuery();
 
   const deleteMutation = trpc.contracts.delete.useMutation({
     onSuccess: () => {
       refetch();
     },
   });
-
-  // Show loading state while checking auth
-  if (authLoading) {
-    return (
-      <ScreenContainer className="items-center justify-center">
-        <ActivityIndicator size="large" color={colors.primary} />
-      </ScreenContainer>
-    );
-  }
-
-  // Redirect to login if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <ScreenContainer className="p-6 items-center justify-center">
-        <View className="items-center gap-4">
-          <Text className="text-xl font-semibold text-foreground">Please sign in</Text>
-          <TouchableOpacity
-            className="bg-primary px-6 py-3 rounded-full"
-            style={{ opacity: 1 }}
-            onPress={() => router.push("/login" as any)}
-          >
-            <Text className="text-white font-semibold">Sign In</Text>
-          </TouchableOpacity>
-        </View>
-      </ScreenContainer>
-    );
-  }
 
   // Filter contracts based on search query
   const filteredContracts = contracts?.filter((item) =>

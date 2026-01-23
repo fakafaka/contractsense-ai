@@ -297,3 +297,18 @@ export async function getUserContractsWithAnalyses(userId: number): Promise<Cont
   
   return results;
 }
+
+export async function getAllContractsWithAnalyses(): Promise<ContractWithAnalysis[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const allContracts = await db.select().from(contracts).orderBy(desc(contracts.createdAt));
+  
+  const results: ContractWithAnalysis[] = [];
+  for (const contract of allContracts) {
+    const analysis = await getAnalysisByContractId(contract.id);
+    results.push({ contract, analysis });
+  }
+  
+  return results;
+}
