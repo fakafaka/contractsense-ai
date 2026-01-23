@@ -1,4 +1,5 @@
 import { invokeLLM } from "./_core/llm";
+import { PDFParse } from "pdf-parse";
 
 export interface AnalysisResult {
   summary: string;
@@ -129,17 +130,28 @@ IMPORTANT:
  * For production, consider using pdf-parse or similar library
  */
 export async function extractTextFromPDF(pdfBuffer: Buffer): Promise<string> {
-  // For now, we'll use a placeholder
-  // In production, you'd want to use a library like pdf-parse
-  // or call an external service
-  
-  // Import pdf-parse dynamically
   try {
-    const pdfParse = (await import("pdf-parse")) as any;
-    const data = await pdfParse.default(pdfBuffer);
-    return data.text;
-  } catch (error) {
+    const parser = new PDFParse({ data: pdfBuffer });
+    const textResult = await parser.getText();
+    const extractedText = textResult.text?.trim() || "";
+    
+    // Clean up
+    await parser.destroy();
+    
+    // Check if we actually extracted any text
+    if (!extractedText || extractedText.length < 10) {
+      throw new Error("NO_TEXT_FOUND");
+    }
+    
+    console.log(`[PDF Extraction] Successfully extracted ${extractedText.length} characters`);
+    return extractedText;
+  } catch (error: any) {
     console.error("[PDF Extraction] Error:", error);
+    
+    if (error.message === "NO_TEXT_FOUND") {
+      throw new Error("This PDF contains no selectable text. Please paste the text instead.");
+    }
+    
     throw new Error("Failed to extract text from PDF. Please try uploading as text instead.");
   }
 }

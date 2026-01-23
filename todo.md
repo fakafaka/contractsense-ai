@@ -11,3 +11,10 @@
 - [x] Simplify History screen (remove search, remove delete)
 - [x] Remove all menus and extra navigation
 - [x] Ensure linear flow: Welcome → Upload → Processing → Summary → History → Upload (loop)
+
+## PDF Text Extraction Fix
+- [x] Fix PDF text extraction in backend (contract-analyzer.ts)
+- [x] Improve error handling for PDFs with no extractable text
+- [x] Show clear message: "This PDF contains no selectable text. Please paste the text instead."
+- [x] Test with text-based PDFs to ensure reliable extraction
+- [x] Ensure no OCR, camera scanning, or image processing is added
