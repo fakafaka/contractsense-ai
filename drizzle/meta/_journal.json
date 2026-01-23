@@ -15,6 +15,13 @@
       "when": 1769181023761,
       "tag": "0001_volatile_king_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1769187042022,
+      "tag": "0002_illegal_forgotten_one",
+      "breakpoints": true
     }
   ]
 }

@@ -35,7 +35,7 @@ export const appRouter = router({
 
         // Create contract record (no user ID)
         const contractId = await db.createContract({
-          userId: 0, // No user authentication
+          userId: null, // No user authentication in MVP
           name: input.name,
           contentType: "text",
           originalText: input.text,
@@ -47,13 +47,12 @@ export const appRouter = router({
         // Save analysis
         const analysisId = await db.createAnalysis({
           contractId,
-          userId: 0, // No user authentication
+          userId: null, // No user authentication in MVP
           summary: analysis.summary,
           mainObligations: JSON.stringify(analysis.mainObligations),
           potentialRisks: JSON.stringify(analysis.potentialRisks),
           redFlags: JSON.stringify(analysis.redFlags),
-          riskLevel: analysis.riskLevel,
-          processingTimeMs: Date.now() - startTime,
+          processingTimeMs: Math.max(0, Date.now() - startTime), // Ensure valid number
         });
 
         return {
@@ -96,7 +95,7 @@ export const appRouter = router({
 
         // Create contract record (no user ID)
         const contractId = await db.createContract({
-          userId: 0, // No user authentication
+          userId: null, // No user authentication in MVP
           name: input.name,
           contentType: "pdf",
           originalText: text,
@@ -110,13 +109,12 @@ export const appRouter = router({
         // Save analysis
         const analysisId = await db.createAnalysis({
           contractId,
-          userId: 0, // No user authentication
+          userId: null, // No user authentication in MVP
           summary: analysis.summary,
           mainObligations: JSON.stringify(analysis.mainObligations),
           potentialRisks: JSON.stringify(analysis.potentialRisks),
           redFlags: JSON.stringify(analysis.redFlags),
-          riskLevel: analysis.riskLevel,
-          processingTimeMs: Date.now() - startTime,
+          processingTimeMs: Math.max(0, Date.now() - startTime), // Ensure valid number
         });
 
         return {

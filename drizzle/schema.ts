@@ -28,7 +28,7 @@ export type InsertUser = typeof users.$inferInsert;
 // Contracts table - stores uploaded contracts
 export const contracts = mysqlTable("contracts", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+  userId: int("userId"), // Nullable - no authentication in MVP
   name: varchar("name", { length: 255 }).notNull(),
   contentType: mysqlEnum("contentType", ["pdf", "text"]).notNull(),
   originalText: text("originalText").notNull(),
@@ -42,7 +42,7 @@ export const contracts = mysqlTable("contracts", {
 export const analyses = mysqlTable("analyses", {
   id: int("id").autoincrement().primaryKey(),
   contractId: int("contractId").notNull(),
-  userId: int("userId").notNull(),
+  userId: int("userId"), // Nullable - no authentication in MVP
   
   // Analysis results
   summary: text("summary").notNull(), // Plain English summary
@@ -50,12 +50,9 @@ export const analyses = mysqlTable("analyses", {
   potentialRisks: text("potentialRisks").notNull(), // JSON array of risks
   redFlags: text("redFlags").notNull(), // JSON array of red flags
   
-  // Risk assessment
-  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high"]).notNull(),
-  
   // Metadata
   analysisVersion: varchar("analysisVersion", { length: 16 }).default("1.0").notNull(),
-  processingTimeMs: int("processingTimeMs"), // Time taken to analyze
+  processingTimeMs: int("processingTimeMs").default(0), // Time taken to analyze, defaults to 0 if unavailable
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

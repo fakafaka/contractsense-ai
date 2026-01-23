@@ -18,3 +18,12 @@
 - [x] Show clear message: "This PDF contains no selectable text. Please paste the text instead."
 - [x] Test with text-based PDFs to ensure reliable extraction
 - [x] Ensure no OCR, camera scanning, or image processing is added
+
+## Database Schema Fix
+- [x] Remove riskLevel from AI analysis generation
+- [x] Remove or make nullable riskLevel column in analyses table
+- [x] Fix processingTimeMs to handle NULL/0 instead of NaN
+- [x] Make userId nullable in contracts table (no authentication)
+- [x] Update insert logic to use NULL for userId
+- [x] Ensure schema matches MVP fields: summary, mainObligations, potentialRisks, redFlags, timestamps
+- [x] Run database migration

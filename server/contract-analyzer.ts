@@ -14,7 +14,6 @@ export interface AnalysisResult {
     title: string;
     description: string;
   }>;
-  riskLevel: "low" | "medium" | "high";
 }
 
 /**
@@ -63,8 +62,7 @@ Please provide your analysis in the following JSON format:
       "title": "Brief red flag title",
       "description": "Plain English explanation of why this is concerning"
     }
-  ],
-  "overallRiskLevel": "low|medium|high"
+  ]
 }
 
 IMPORTANT:
@@ -72,7 +70,6 @@ IMPORTANT:
 - Main obligations should be written as "You will..." or "You must..." statements
 - Potential risks should explain realistic scenarios that could happen
 - Red flags should highlight the most concerning clauses
-- Overall risk level should be based on the severity and number of issues found
 - Use plain English throughout - no legal jargon`;
 
   try {
@@ -110,9 +107,6 @@ IMPORTANT:
             description: flag.description || "",
           }))
         : [],
-      riskLevel: ["low", "medium", "high"].includes(parsed.overallRiskLevel)
-        ? parsed.overallRiskLevel
-        : "medium",
     };
 
     const processingTime = Date.now() - startTime;
