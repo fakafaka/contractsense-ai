@@ -1,6 +1,18 @@
-import { eq } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { 
+  InsertUser, 
+  users,
+  contracts,
+  analyses,
+  userSubscriptions,
+  type Contract,
+  type Analysis,
+  type InsertContract,
+  type InsertAnalysis,
+  type UserSubscription,
+  type InsertUserSubscription
+} from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +101,199 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// ============================================
+// Contract Operations
+// ============================================
+
+export async function createContract(data: InsertContract): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(contracts).values(data) as any;
+  return Number(result.insertId);
+}
+
+export async function getContractById(contractId: number): Promise<Contract | null> {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select().from(contracts).where(eq(contracts.id, contractId)).limit(1);
+  return result[0] || null;
+}
+
+export async function getUserContracts(userId: number): Promise<Contract[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(contracts).where(eq(contracts.userId, userId)).orderBy(desc(contracts.createdAt));
+}
+
+export async function deleteContract(contractId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Delete associated analyses first
+  await db.delete(analyses).where(eq(analyses.contractId, contractId));
+  
+  // Delete contract
+  await db.delete(contracts).where(eq(contracts.id, contractId));
+}
+
+// ============================================
+// Analysis Operations
+// ============================================
+
+export async function createAnalysis(data: InsertAnalysis): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(analyses).values(data) as any;
+  return Number(result.insertId);
+}
+
+export async function getAnalysisById(analysisId: number): Promise<Analysis | null> {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select().from(analyses).where(eq(analyses.id, analysisId)).limit(1);
+  return result[0] || null;
+}
+
+export async function getAnalysisByContractId(contractId: number): Promise<Analysis | null> {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select().from(analyses).where(eq(analyses.contractId, contractId)).limit(1);
+  return result[0] || null;
+}
+
+export async function getUserAnalyses(userId: number): Promise<Analysis[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(analyses).where(eq(analyses.userId, userId)).orderBy(desc(analyses.createdAt));
+}
+
+export async function deleteAnalysis(analysisId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.delete(analyses).where(eq(analyses.id, analysisId));
+}
+
+// ============================================
+// Subscription Operations
+// ============================================
+
+export async function getUserSubscription(userId: number): Promise<UserSubscription | null> {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select().from(userSubscriptions).where(eq(userSubscriptions.userId, userId)).limit(1);
+  return result[0] || null;
+}
+
+export async function createUserSubscription(data: InsertUserSubscription): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(userSubscriptions).values(data) as any;
+  return Number(result.insertId);
+}
+
+export async function incrementAnalysisCount(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Get current subscription
+  const subscription = await getUserSubscription(userId);
+  
+  if (!subscription) {
+    // Create new subscription if doesn't exist
+    await createUserSubscription({
+      userId,
+      plan: "free",
+      analysesThisMonth: 1,
+      monthlyLimit: 3,
+      lastResetDate: new Date(),
+    });
+    return;
+  }
+  
+  // Check if we need to reset the counter (new month)
+  const now = new Date();
+  const lastReset = new Date(subscription.lastResetDate);
+  const isNewMonth = now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear();
+  
+  if (isNewMonth) {
+    // Reset counter for new month
+    await db.update(userSubscriptions)
+      .set({ 
+        analysesThisMonth: 1, 
+        lastResetDate: now 
+      })
+      .where(eq(userSubscriptions.userId, userId));
+  } else {
+    // Increment counter
+    await db.update(userSubscriptions)
+      .set({ 
+        analysesThisMonth: subscription.analysesThisMonth + 1 
+      })
+      .where(eq(userSubscriptions.userId, userId));
+  }
+}
+
+export async function canUserAnalyze(userId: number): Promise<{ canAnalyze: boolean; remaining: number; limit: number }> {
+  const subscription = await getUserSubscription(userId);
+  
+  if (!subscription) {
+    // New user, can analyze
+    return { canAnalyze: true, remaining: 3, limit: 3 };
+  }
+  
+  // Check if we need to reset the counter (new month)
+  const now = new Date();
+  const lastReset = new Date(subscription.lastResetDate);
+  const isNewMonth = now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear();
+  
+  if (isNewMonth) {
+    // New month, reset counter
+    return { canAnalyze: true, remaining: subscription.monthlyLimit, limit: subscription.monthlyLimit };
+  }
+  
+  // Premium users have unlimited analyses
+  if (subscription.plan === "premium" || subscription.monthlyLimit === -1) {
+    return { canAnalyze: true, remaining: -1, limit: -1 };
+  }
+  
+  const remaining = subscription.monthlyLimit - subscription.analysesThisMonth;
+  return { 
+    canAnalyze: remaining > 0, 
+    remaining: Math.max(0, remaining), 
+    limit: subscription.monthlyLimit 
+  };
+}
+
+// ============================================
+// Combined Operations
+// ============================================
+
+export interface ContractWithAnalysis {
+  contract: Contract;
+  analysis: Analysis | null;
+}
+
+export async function getUserContractsWithAnalyses(userId: number): Promise<ContractWithAnalysis[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const userContracts = await getUserContracts(userId);
+  
+  const results: ContractWithAnalysis[] = [];
+  for (const contract of userContracts) {
+    const analysis = await getAnalysisByContractId(contract.id);
+    results.push({ contract, analysis });
+  }
+  
+  return results;
+}

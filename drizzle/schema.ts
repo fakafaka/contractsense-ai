@@ -25,4 +25,59 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+// Contracts table - stores uploaded contracts
+export const contracts = mysqlTable("contracts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  contentType: mysqlEnum("contentType", ["pdf", "text"]).notNull(),
+  originalText: text("originalText").notNull(),
+  fileUrl: varchar("fileUrl", { length: 512 }), // S3 URL for PDF files
+  fileSize: int("fileSize"), // File size in bytes
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+// Analyses table - stores AI-generated contract analyses
+export const analyses = mysqlTable("analyses", {
+  id: int("id").autoincrement().primaryKey(),
+  contractId: int("contractId").notNull(),
+  userId: int("userId").notNull(),
+  
+  // Analysis results
+  summary: text("summary").notNull(), // Plain English summary
+  mainObligations: text("mainObligations").notNull(), // JSON array of obligations
+  potentialRisks: text("potentialRisks").notNull(), // JSON array of risks
+  redFlags: text("redFlags").notNull(), // JSON array of red flags
+  
+  // Risk assessment
+  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high"]).notNull(),
+  
+  // Metadata
+  analysisVersion: varchar("analysisVersion", { length: 16 }).default("1.0").notNull(),
+  processingTimeMs: int("processingTimeMs"), // Time taken to analyze
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+// User subscription tracking
+export const userSubscriptions = mysqlTable("userSubscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  plan: mysqlEnum("plan", ["free", "premium"]).default("free").notNull(),
+  analysesThisMonth: int("analysesThisMonth").default(0).notNull(),
+  monthlyLimit: int("monthlyLimit").default(3).notNull(), // Free: 3, Premium: unlimited (-1)
+  lastResetDate: timestamp("lastResetDate").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Contract = typeof contracts.$inferSelect;
+export type InsertContract = typeof contracts.$inferInsert;
+
+export type Analysis = typeof analyses.$inferSelect;
+export type InsertAnalysis = typeof analyses.$inferInsert;
+
+export type UserSubscription = typeof userSubscriptions.$inferSelect;
+export type InsertUserSubscription = typeof userSubscriptions.$inferInsert;
