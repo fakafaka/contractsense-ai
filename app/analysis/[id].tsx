@@ -65,41 +65,14 @@ export default function AnalysisScreen() {
             </Text>
           </View>
 
-          {/* Date and Risk Badge */}
-          <View className="flex-row items-center justify-between">
-            <Text className="text-sm text-muted">
-              {contract && new Date(contract.createdAt).toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              })}
-            </Text>
-            <View
-              className="px-4 py-2 rounded-full"
-              style={{
-                backgroundColor:
-                  analysis.riskLevel === "low"
-                    ? colors.success + "20"
-                    : analysis.riskLevel === "medium"
-                    ? colors.warning + "20"
-                    : colors.error + "20",
-              }}
-            >
-              <Text
-                className="text-sm font-bold"
-                style={{
-                  color:
-                    analysis.riskLevel === "low"
-                      ? colors.success
-                      : analysis.riskLevel === "medium"
-                      ? colors.warning
-                      : colors.error,
-                }}
-              >
-                {analysis.riskLevel.toUpperCase()} RISK
-              </Text>
-            </View>
-          </View>
+          {/* Date */}
+          <Text className="text-sm text-muted">
+            {contract && new Date(contract.createdAt).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            })}
+          </Text>
 
           {/* Summary Section */}
           <View className="bg-surface rounded-2xl p-5 border border-border">
@@ -192,6 +165,24 @@ export default function AnalysisScreen() {
                 </Text>
               </View>
             </View>
+          </View>
+
+          {/* Navigation Buttons */}
+          <View className="gap-3">
+            <TouchableOpacity
+              className="bg-primary px-6 py-4 rounded-full"
+              style={{ opacity: 1 }}
+              onPress={() => router.push("/history" as any)}
+            >
+              <Text className="text-white font-bold text-center">View All Analyses</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="bg-surface px-6 py-4 rounded-full border border-border"
+              style={{ opacity: 1 }}
+              onPress={() => router.push("/upload" as any)}
+            >
+              <Text className="text-foreground font-bold text-center">Analyze Another Contract</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>

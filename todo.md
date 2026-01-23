@@ -1,15 +1,13 @@
-# ContractSense AI - Simplification TODO
+# ContractSense AI - Final Minimal MVP
 
-## Simplification Tasks
-- [x] Remove authentication requirement from backend
-- [x] Update database to work without user accounts
-- [x] Remove login screen
-- [x] Remove profile screen
-- [x] Simplify tab navigation to 2 tabs (Home, History)
-- [x] Rebuild Welcome screen with disclaimer
-- [x] Simplify upload screen
-- [x] Keep processing state in upload flow
-- [x] Keep analysis/summary screen
-- [x] Keep history screen
-- [x] Remove all settings/help/extra features
-- [x] Update app to use local storage only (no user accounts)
+## Final Simplification (Linear Flow Only)
+- [x] Remove tab navigation completely
+- [x] Remove bottom navigation bar
+- [x] Convert to linear screen flow with simple navigation
+- [x] Simplify Welcome screen (name + disclaimer only)
+- [x] Keep Upload screen (PDF or text)
+- [x] Keep Processing screen (loading only)
+- [x] Simplify Summary screen (remove risk badges)
+- [x] Simplify History screen (remove search, remove delete)
+- [x] Remove all menus and extra navigation
+- [x] Ensure linear flow: Welcome → Upload → Processing → Summary → History → Upload (loop)
