@@ -27,3 +27,11 @@
 - [x] Update insert logic to use NULL for userId
 - [x] Ensure schema matches MVP fields: summary, mainObligations, potentialRisks, redFlags, timestamps
 - [x] Run database migration
+
+## Database Insert Crash Fix
+- [x] Verify actual database schema matches code schema
+- [x] Ensure riskLevel column is removed or nullable with default NULL
+- [x] Fix processingTimeMs to never be NaN (always valid number or 0)
+- [x] Verify userId is nullable in both contracts and analyses tables
+- [x] Test that analysis saves successfully to database
+- [x] Verify saved analysis appears in History screen

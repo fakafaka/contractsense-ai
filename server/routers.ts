@@ -52,7 +52,7 @@ export const appRouter = router({
           mainObligations: JSON.stringify(analysis.mainObligations),
           potentialRisks: JSON.stringify(analysis.potentialRisks),
           redFlags: JSON.stringify(analysis.redFlags),
-          processingTimeMs: Math.max(0, Date.now() - startTime), // Ensure valid number
+          processingTimeMs: Number.isFinite(Date.now() - startTime) ? Math.max(0, Date.now() - startTime) : 0, // Ensure valid number, never NaN
         });
 
         return {
@@ -114,7 +114,7 @@ export const appRouter = router({
           mainObligations: JSON.stringify(analysis.mainObligations),
           potentialRisks: JSON.stringify(analysis.potentialRisks),
           redFlags: JSON.stringify(analysis.redFlags),
-          processingTimeMs: Math.max(0, Date.now() - startTime), // Ensure valid number
+          processingTimeMs: Number.isFinite(Date.now() - startTime) ? Math.max(0, Date.now() - startTime) : 0, // Ensure valid number, never NaN
         });
 
         return {
