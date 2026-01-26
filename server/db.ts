@@ -147,6 +147,24 @@ export async function createAnalysis(data: InsertAnalysis): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
+  // Final safety clamp: ensure processingTimeMs is never NaN
+  if (!Number.isFinite(data.processingTimeMs as any)) {
+    console.warn('[createAnalysis] SAFETY CLAMP: processingTimeMs was invalid, setting to 0. Original value:', data.processingTimeMs);
+    data.processingTimeMs = 0;
+  }
+
+  // Log the exact data being inserted
+  console.log('[createAnalysis data]', JSON.stringify({
+    contractId: data.contractId,
+    userId: data.userId,
+    processingTimeMs: data.processingTimeMs,
+    processingTimeType: typeof data.processingTimeMs,
+    isNaN: isNaN(data.processingTimeMs as any),
+    isFinite: Number.isFinite(data.processingTimeMs),
+    summaryLen: data.summary?.length,
+    fullData: data
+  }, null, 2));
+  
   const result = await db.insert(analyses).values(data) as any;
   return Number(result.insertId);
 }

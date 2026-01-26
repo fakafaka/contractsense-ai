@@ -43,3 +43,15 @@
 - [x] Add fallback to 0 if timing calculation fails
 - [x] Test analysis saves successfully to database
 - [x] Verify analysis appears in History screen
+
+## Add Comprehensive Logging to Trace NaN Issue
+- [x] Add log before createAnalysis() in analyzeText endpoint
+- [x] Add log before createAnalysis() in analyzePDF endpoint
+- [x] Add log inside db.createAnalysis() function
+- [x] Restart backend server
+- [x] Guide user to view logs in Manus Preview
+
+## Add Final Safety Clamp in db.createAnalysis()
+- [x] Add if (!Number.isFinite(data.processingTimeMs as any)) data.processingTimeMs = 0; before insert
+- [x] Restart server
+- [x] Create checkpoint

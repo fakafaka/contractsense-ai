@@ -76,6 +76,9 @@ async function startServer() {
   }
 
   server.listen(port, () => {
+    const version = "v2.0";
+    const timestamp = new Date().toISOString();
+    console.log(`[BACKEND VERSION] ${version} ${timestamp}`);
     console.log(`[api] server listening on port ${port}`);
   });
 }

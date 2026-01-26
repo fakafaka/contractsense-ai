@@ -57,6 +57,17 @@ export const appRouter = router({
 
         console.log('[Analysis] Processing time:', processingTimeMs, 'ms');
 
+        // Log payload before DB insert
+        console.log('[DB INSERT PAYLOAD]', JSON.stringify({ 
+          contractId, 
+          userId: null, 
+          processingTimeMs, 
+          processingTimeType: typeof processingTimeMs,
+          isNaN: isNaN(processingTimeMs),
+          isFinite: Number.isFinite(processingTimeMs),
+          summaryLen: analysis.summary?.length 
+        }));
+
         // Save analysis
         const analysisId = await db.createAnalysis({
           contractId,
@@ -131,6 +142,17 @@ export const appRouter = router({
         processingTimeMs = Math.floor(processingTimeMs); // Ensure integer
 
         console.log('[Analysis] Processing time:', processingTimeMs, 'ms');
+
+        // Log payload before DB insert
+        console.log('[DB INSERT PAYLOAD]', JSON.stringify({ 
+          contractId, 
+          userId: null, 
+          processingTimeMs, 
+          processingTimeType: typeof processingTimeMs,
+          isNaN: isNaN(processingTimeMs),
+          isFinite: Number.isFinite(processingTimeMs),
+          summaryLen: analysis.summary?.length 
+        }));
 
         // Save analysis
         const analysisId = await db.createAnalysis({
