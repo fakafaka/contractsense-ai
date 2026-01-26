@@ -44,6 +44,19 @@ export const appRouter = router({
         // Analyze the contract
         const analysis = await analyzeContract(input.text);
 
+        // Calculate processing time with defensive checks
+        const endTime = Date.now();
+        let processingTimeMs = endTime - startTime;
+        
+        // Defensive check: ensure processingTimeMs is always a valid integer
+        if (!Number.isFinite(processingTimeMs) || isNaN(processingTimeMs) || processingTimeMs < 0) {
+          console.warn('[Analysis] Invalid processingTimeMs:', processingTimeMs, 'startTime:', startTime, 'endTime:', endTime);
+          processingTimeMs = 0;
+        }
+        processingTimeMs = Math.floor(processingTimeMs); // Ensure integer
+
+        console.log('[Analysis] Processing time:', processingTimeMs, 'ms');
+
         // Save analysis
         const analysisId = await db.createAnalysis({
           contractId,
@@ -52,7 +65,7 @@ export const appRouter = router({
           mainObligations: JSON.stringify(analysis.mainObligations),
           potentialRisks: JSON.stringify(analysis.potentialRisks),
           redFlags: JSON.stringify(analysis.redFlags),
-          processingTimeMs: Number.isFinite(Date.now() - startTime) ? Math.max(0, Date.now() - startTime) : 0, // Ensure valid number, never NaN
+          processingTimeMs,
         });
 
         return {
@@ -106,6 +119,19 @@ export const appRouter = router({
         // Analyze the contract
         const analysis = await analyzeContract(text);
 
+        // Calculate processing time with defensive checks
+        const endTime = Date.now();
+        let processingTimeMs = endTime - startTime;
+        
+        // Defensive check: ensure processingTimeMs is always a valid integer
+        if (!Number.isFinite(processingTimeMs) || isNaN(processingTimeMs) || processingTimeMs < 0) {
+          console.warn('[Analysis] Invalid processingTimeMs:', processingTimeMs, 'startTime:', startTime, 'endTime:', endTime);
+          processingTimeMs = 0;
+        }
+        processingTimeMs = Math.floor(processingTimeMs); // Ensure integer
+
+        console.log('[Analysis] Processing time:', processingTimeMs, 'ms');
+
         // Save analysis
         const analysisId = await db.createAnalysis({
           contractId,
@@ -114,7 +140,7 @@ export const appRouter = router({
           mainObligations: JSON.stringify(analysis.mainObligations),
           potentialRisks: JSON.stringify(analysis.potentialRisks),
           redFlags: JSON.stringify(analysis.redFlags),
-          processingTimeMs: Number.isFinite(Date.now() - startTime) ? Math.max(0, Date.now() - startTime) : 0, // Ensure valid number, never NaN
+          processingTimeMs,
         });
 
         return {

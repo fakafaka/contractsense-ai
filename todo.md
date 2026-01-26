@@ -35,3 +35,11 @@
 - [x] Verify userId is nullable in both contracts and analyses tables
 - [x] Test that analysis saves successfully to database
 - [x] Verify saved analysis appears in History screen
+
+## Fix processingTimeMs NaN Issue (CRITICAL)
+- [x] Investigate why processingTimeMs is NaN
+- [x] Add defensive check right before DB insert: if (!Number.isFinite(processingTimeMs)) processingTimeMs = 0
+- [x] Ensure timer starts before analysis and stops after
+- [x] Add fallback to 0 if timing calculation fails
+- [x] Test analysis saves successfully to database
+- [x] Verify analysis appears in History screen
