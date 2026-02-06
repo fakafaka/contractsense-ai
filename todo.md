@@ -87,3 +87,9 @@
 - [x] Remove repetition and extra context from prompt
 - [x] Handle non-contract inputs briefly
 - [x] Test analysis output length
+
+## Use Neutral Wording in Analysis Output
+- [x] Update AI prompt to avoid imperative advice ("You must/should")
+- [x] Use neutral wording: "The document states...", "It may mean...", "This clause indicates..."
+- [x] Update mainObligations format to use neutral language
+- [x] Test analysis output for neutral tone

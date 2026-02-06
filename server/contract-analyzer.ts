@@ -45,9 +45,9 @@ Provide analysis in this JSON format:
 {
   "summary": "2-3 sentence overview (max 50 words). If not a contract, say so briefly.",
   "mainObligations": [
-    "Short bullet (max 15 words)",
-    "Short bullet (max 15 words)",
-    "Short bullet (max 15 words)"
+    "The document states... (max 15 words)",
+    "The agreement indicates... (max 15 words)",
+    "This clause requires... (max 15 words)"
   ],
   "potentialRisks": [
     {
@@ -67,11 +67,10 @@ Provide analysis in this JSON format:
 
 STRICT RULES:
 - Summary: 2-3 sentences max (50 words)
-- Main obligations: 3-5 bullets, each max 15 words
-- Potential risks: 3-5 items, title 3-5 words, description max 20 words
-- Red flags: 3-5 items, title 3-5 words, description max 20 words
-- NO paragraphs, NO repetition, NO extra context
-- Use "You will..." or "You must..." for obligations
+- Main obligations: 3-5 bullets, each max 15 words. Use NEUTRAL wording: "The document states...", "The agreement indicates...", "This clause requires...". NEVER use "You must/should/will".
+- Potential risks: 3-5 items, title 3-5 words, description max 20 words. Use neutral language: "It may mean...", "This could result in..."
+- Red flags: 3-5 items, title 3-5 words, description max 20 words. Use neutral language: "This clause indicates...", "The document allows..."
+- NO paragraphs, NO repetition, NO extra context, NO imperative advice
 - Total output: 250-400 words max`;
 
   try {
