@@ -52,7 +52,7 @@ export const analyses = mysqlTable("analyses", {
   
   // Metadata
   analysisVersion: varchar("analysisVersion", { length: 16 }).default("1.0").notNull(),
-  processingTimeMs: int("processingTimeMs").default(0), // Time taken to analyze, defaults to 0 if unavailable
+  processingTimeMs: int("processingTimeMs").notNull().default(0), // Time taken to analyze, defaults to 0 if unavailable
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

@@ -1,0 +1,1 @@
+ALTER TABLE `analyses` MODIFY COLUMN `processingTimeMs` int NOT NULL;

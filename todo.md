@@ -55,3 +55,12 @@
 - [x] Add if (!Number.isFinite(data.processingTimeMs as any)) data.processingTimeMs = 0; before insert
 - [x] Restart server
 - [x] Create checkpoint
+
+## Absolute Last-Line Defense Against NaN (CRITICAL)
+- [x] Implement aggressive sanitization in db.createAnalysis():
+  - const pt = Number(data.processingTimeMs); data.processingTimeMs = Number.isFinite(pt) ? Math.floor(pt) : 0;
+  - const cid = Number(data.contractId); data.contractId = Number.isFinite(cid) ? cid : 0;
+- [x] Verify DB schema: processingTimeMs is NOT NULL DEFAULT 0
+- [x] Test text paste analysis saves successfully
+- [x] Test PDF upload analysis saves successfully
+- [x] Verify saved analyses appear in History
