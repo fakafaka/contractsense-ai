@@ -35,42 +35,44 @@ IMPORTANT GUIDELINES:
 - This is NOT legal advice - you're helping people understand, not advising them legally
 - Be objective and balanced - don't exaggerate risks but don't minimize them either`;
 
-  const userPrompt = `Please analyze the following contract and provide a comprehensive breakdown in plain English.
+  const userPrompt = `Analyze this contract BRIEFLY in plain English. Total output must be 250-400 words max.
 
 CONTRACT TEXT:
 ${contractText}
 
-Please provide your analysis in the following JSON format:
+Provide analysis in this JSON format:
 
 {
-  "summary": "A 2-3 paragraph plain English summary of what this contract is about and its main purpose",
+  "summary": "2-3 sentence overview (max 50 words). If not a contract, say so briefly.",
   "mainObligations": [
-    "First main responsibility or obligation",
-    "Second main responsibility or obligation",
-    "Third main responsibility or obligation"
+    "Short bullet (max 15 words)",
+    "Short bullet (max 15 words)",
+    "Short bullet (max 15 words)"
   ],
   "potentialRisks": [
     {
-      "title": "Brief risk title",
-      "description": "Plain English explanation of what could go wrong",
+      "title": "3-5 words",
+      "description": "One short sentence (max 20 words)",
       "severity": "low|medium|high"
     }
   ],
   "redFlags": [
     {
       "category": "termination|payment|liability|other",
-      "title": "Brief red flag title",
-      "description": "Plain English explanation of why this is concerning"
+      "title": "3-5 words",
+      "description": "One short sentence (max 20 words)"
     }
   ]
 }
 
-IMPORTANT:
-- Summary should be conversational and easy to understand
-- Main obligations should be written as "You will..." or "You must..." statements
-- Potential risks should explain realistic scenarios that could happen
-- Red flags should highlight the most concerning clauses
-- Use plain English throughout - no legal jargon`;
+STRICT RULES:
+- Summary: 2-3 sentences max (50 words)
+- Main obligations: 3-5 bullets, each max 15 words
+- Potential risks: 3-5 items, title 3-5 words, description max 20 words
+- Red flags: 3-5 items, title 3-5 words, description max 20 words
+- NO paragraphs, NO repetition, NO extra context
+- Use "You will..." or "You must..." for obligations
+- Total output: 250-400 words max`;
 
   try {
     const response = await invokeLLM({

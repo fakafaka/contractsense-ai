@@ -79,3 +79,11 @@
 - [x] Add logging to trace insertId extraction
 - [x] Fix insertId extraction to handle different ORM result shapes
 - [x] Test that analysisId is received by frontend
+
+## Enforce Brevity in Contract Analysis Output
+- [x] Update AI prompt to enforce max 250-400 words total
+- [x] Limit each section to 3-5 bullets max
+- [x] Use short bullets only, no paragraphs
+- [x] Remove repetition and extra context from prompt
+- [x] Handle non-contract inputs briefly
+- [x] Test analysis output length
