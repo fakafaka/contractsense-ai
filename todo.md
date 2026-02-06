@@ -64,3 +64,10 @@
 - [x] Test text paste analysis saves successfully
 - [x] Test PDF upload analysis saves successfully
 - [x] Verify saved analyses appear in History
+
+## Fix "Analysis Not Found" - analysisId Navigation Issue
+- [x] Trace createAnalysis() return value in routers.ts
+- [x] Verify analysisId is returned to frontend
+- [x] Check upload.tsx navigation to Summary screen
+- [x] Fix navigation to pass valid analysisId
+- [x] Add error handling if analysisId is missing

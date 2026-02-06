@@ -82,6 +82,11 @@ export default function UploadScreen() {
           text: contractText.trim(),
         });
         
+        // Validate analysisId before navigation
+        if (!result.analysisId) {
+          throw new Error("Analysis completed but no ID was returned");
+        }
+        
         // Navigate to analysis screen
         router.replace(`/analysis/${result.analysisId}` as any);
       } else if (uploadMethod === "pdf" && pdfFile) {
@@ -95,6 +100,11 @@ export default function UploadScreen() {
           pdfBase64: base64,
           fileSize: pdfFile.size,
         });
+
+        // Validate analysisId before navigation
+        if (!result.analysisId) {
+          throw new Error("Analysis completed but no ID was returned");
+        }
 
         // Navigate to analysis screen
         router.replace(`/analysis/${result.analysisId}` as any);
