@@ -71,3 +71,11 @@
 - [x] Check upload.tsx navigation to Summary screen
 - [x] Fix navigation to pass valid analysisId
 - [x] Add error handling if analysisId is missing
+
+## Fix Response Shape - analysisId Not Returned
+- [x] Check analyzeText return statement in routers.ts
+- [x] Check analyzePDF return statement in routers.ts
+- [x] Ensure both return { analysisId } consistently
+- [x] Add logging to trace insertId extraction
+- [x] Fix insertId extraction to handle different ORM result shapes
+- [x] Test that analysisId is received by frontend

@@ -173,7 +173,18 @@ export async function createAnalysis(data: InsertAnalysis): Promise<number> {
   }, null, 2));
   
   const result = await db.insert(analyses).values(data) as any;
-  return Number(result.insertId);
+  console.log('[createAnalysis] INSERT RESULT:', JSON.stringify(result, null, 2));
+  
+  // Extract insertId from result (drizzle-orm returns it in different shapes depending on driver)
+  const insertId = result.insertId || result[0]?.insertId || result.id;
+  console.log('[createAnalysis] EXTRACTED insertId:', insertId);
+  
+  if (!insertId) {
+    console.error('[createAnalysis] ERROR: No insertId found in result:', result);
+    throw new Error('Failed to get analysis ID from database');
+  }
+  
+  return Number(insertId);
 }
 
 export async function getAnalysisById(analysisId: number): Promise<Analysis | null> {
