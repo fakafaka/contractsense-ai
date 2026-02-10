@@ -138,3 +138,8 @@
 - [x] Return analysisId, createdAt, and title (from contract name or "Untitled")
 - [x] Update History UI to use simplified data structure
 - [x] No filters, no userId logic, no refactoring
+
+## Fix createContract() insertId Extraction
+- [x] Implement robust insertId extraction in createContract()
+- [x] Handle multiple driver result formats (result.insertId, result[0].insertId, result.lastInsertRowid)
+- [x] Throw error if insertId is missing or invalid

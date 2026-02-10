@@ -110,7 +110,11 @@ export async function createContract(data: InsertContract): Promise<number> {
   if (!db) throw new Error("Database not available");
   
   const result = await db.insert(contracts).values(data) as any;
-  return Number(result.insertId);
+  const id = Number((result as any)?.insertId ?? (result as any)?.[0]?.insertId ?? (result as any)?.lastInsertRowid);
+  if (!Number.isFinite(id) || id <= 0) {
+    throw new Error("createContract failed: missing insert id");
+  }
+  return id;
 }
 
 export async function getContractById(contractId: number): Promise<Contract | null> {
