@@ -53,14 +53,16 @@ export default function HistoryScreen() {
           /* Contract List */
           <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
             <View className="gap-3">
-              {contracts.map((item) => (
+              {contracts.filter((item) => item.analysis?.id).map((item) => (
                 <TouchableOpacity
                   key={item.contract.id}
                   className="bg-surface rounded-xl border border-border p-5"
                   style={{ opacity: 1 }}
-                  onPress={() =>
-                    router.push(`/analysis/${item.analysis?.id}` as any)
-                  }
+                  onPress={() => {
+                    if (item.analysis?.id) {
+                      router.push(`/analysis/${item.analysis.id}` as any);
+                    }
+                  }}
                 >
                   <Text className="text-base font-semibold text-foreground" numberOfLines={2}>
                     {item.contract.name}

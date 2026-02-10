@@ -93,3 +93,12 @@
 - [x] Use neutral wording: "The document states...", "It may mean...", "This clause indicates..."
 - [x] Update mainObligations format to use neutral language
 - [x] Test analysis output for neutral tone
+
+## Fix History → Summary Navigation (analysisId Mismatch)
+- [x] Check History data source - does it return analysisId or contractId?
+- [x] Check History tap handler - what ID is passed to Summary?
+- [x] Check Summary screen - does it load by analysisId or contractId?
+- [x] Pick ONE approach and make it consistent
+- [x] Fix minimal diff to ensure correct ID is used throughout
+- [x] Filter out contracts without analyses in History list
+- [x] Add safety check before navigation to prevent /analysis/undefined
