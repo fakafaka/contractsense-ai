@@ -126,3 +126,9 @@
 - [x] Update History screen to use analyses list instead of contractsWithAnalyses
 - [x] Remove temporary console logs from History tap handler
 - [x] Test History shows analyses and navigation works
+
+## Fix Empty History After Analyses Complete
+- [x] Change getAllAnalysesWithContractNames() from INNER JOIN to LEFT JOIN
+- [x] Remove contractId sanitization to 0 in db.createAnalysis()
+- [x] Throw error if contractId is invalid instead of clamping
+- [x] Add fallback text "Untitled contract" in History UI when contractName is null

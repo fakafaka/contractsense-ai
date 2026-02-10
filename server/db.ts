@@ -147,18 +147,16 @@ export async function createAnalysis(data: InsertAnalysis): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  // ABSOLUTE LAST-LINE DEFENSE: Aggressively sanitize all numeric fields to guarantee NaN can never reach DB
-  console.log('[createAnalysis] BEFORE SANITIZATION:', { contractId: data.contractId, processingTimeMs: data.processingTimeMs });
-  
   // Sanitize processingTimeMs
   const pt = Number(data.processingTimeMs);
   data.processingTimeMs = Number.isFinite(pt) ? Math.floor(pt) : 0;
   
-  // Sanitize contractId
+  // Validate contractId (throw error if invalid)
   const cid = Number(data.contractId);
-  data.contractId = Number.isFinite(cid) ? cid : 0;
-  
-  console.log('[createAnalysis] AFTER SANITIZATION:', { contractId: data.contractId, processingTimeMs: data.processingTimeMs });
+  if (!Number.isFinite(cid) || cid <= 0) {
+    throw new Error(`Invalid contractId: ${data.contractId}`);
+  }
+  data.contractId = cid;
 
   // Log the exact data being inserted
   console.log('[createAnalysis data]', JSON.stringify({
@@ -349,7 +347,7 @@ export async function getAllContractsWithAnalyses(): Promise<ContractWithAnalysi
   return results;
 }
 
-export async function getAllAnalysesWithContractNames(): Promise<Array<{ analysisId: number; contractName: string; createdAt: Date }>> {
+export async function getAllAnalysesWithContractNames(): Promise<Array<{ analysisId: number; contractName: string | null; createdAt: Date }>> {
   const db = await getDb();
   if (!db) return [];
   
@@ -360,7 +358,7 @@ export async function getAllAnalysesWithContractNames(): Promise<Array<{ analysi
       createdAt: analyses.createdAt,
     })
     .from(analyses)
-    .innerJoin(contracts, eq(contracts.id, analyses.contractId))
+    .leftJoin(contracts, eq(contracts.id, analyses.contractId))
     .orderBy(desc(analyses.createdAt));
   
   return results;
