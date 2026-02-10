@@ -186,22 +186,10 @@ export const appRouter = router({
         };
       }),
 
-    // Get all contracts with analyses (no user filter)
+    // Get all analyses with contract names (no user filter)
     list: publicProcedure.query(async () => {
-      const contractsWithAnalyses = await db.getAllContractsWithAnalyses();
-      console.log('[contracts.list] Found contracts:', contractsWithAnalyses.length);
-      console.log('[contracts.list] Sample:', JSON.stringify(contractsWithAnalyses[0], null, 2));
-      return contractsWithAnalyses.map((item) => ({
-        contract: item.contract,
-        analysis: item.analysis
-          ? {
-              ...item.analysis,
-              mainObligations: JSON.parse(item.analysis.mainObligations),
-              potentialRisks: JSON.parse(item.analysis.potentialRisks),
-              redFlags: JSON.parse(item.analysis.redFlags),
-            }
-          : null,
-      }));
+      const analyses = await db.getAllAnalysesWithContractNames();
+      return analyses;
     }),
 
     // Get a specific analysis

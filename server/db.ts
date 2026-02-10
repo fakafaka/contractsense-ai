@@ -348,3 +348,20 @@ export async function getAllContractsWithAnalyses(): Promise<ContractWithAnalysi
   
   return results;
 }
+
+export async function getAllAnalysesWithContractNames(): Promise<Array<{ analysisId: number; contractName: string; createdAt: Date }>> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const results = await db
+    .select({
+      analysisId: analyses.id,
+      contractName: contracts.name,
+      createdAt: analyses.createdAt,
+    })
+    .from(analyses)
+    .innerJoin(contracts, eq(contracts.id, analyses.contractId))
+    .orderBy(desc(analyses.createdAt));
+  
+  return results;
+}

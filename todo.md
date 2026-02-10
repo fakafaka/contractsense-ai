@@ -119,3 +119,10 @@
 - [x] Add warning log when analysisId is missing
 - [x] Test tapping History items navigates to Summary correctly
 - [x] Confirmed root issue: analyses are not being saved to database (analysis: null)
+
+## Switch History to Use Analyses as Source of Truth
+- [x] Create backend query: SELECT analyses.id, analyses.createdAt, contracts.name FROM analyses JOIN contracts
+- [x] Add tRPC endpoint that returns analyses list (no userId filter)
+- [x] Update History screen to use analyses list instead of contractsWithAnalyses
+- [x] Remove temporary console logs from History tap handler
+- [x] Test History shows analyses and navigation works

@@ -8,8 +8,8 @@ import { useColors } from "@/hooks/use-colors";
 export default function HistoryScreen() {
   const colors = useColors();
   
-  const { data: contracts, isLoading } = trpc.contracts.list.useQuery();
-
+  const { data: analyses = [], isLoading } = trpc.contracts.list.useQuery();
+  
   return (
     <ScreenContainer className="p-6">
       <View className="flex-1">
@@ -31,7 +31,7 @@ export default function HistoryScreen() {
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color={colors.primary} />
           </View>
-        ) : !contracts || contracts.length === 0 ? (
+        ) : !analyses || analyses.length === 0 ? (
           /* Empty State */
           <View className="flex-1 items-center justify-center">
             <IconSymbol size={64} name="clock.fill" color={colors.muted} />
@@ -53,26 +53,20 @@ export default function HistoryScreen() {
           /* Contract List */
           <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
             <View className="gap-3">
-              {contracts.map((item) => (
+              {analyses.map((item) => (
                 <TouchableOpacity
-                  key={item.contract.id}
+                  key={item.analysisId}
                   className="bg-surface rounded-xl border border-border p-5"
                   style={{ opacity: 1 }}
                   onPress={() => {
-                    const analysisId = item.analysis?.id;
-                    console.log("History tap", analysisId);
-                    if (analysisId) {
-                      router.push(`/analysis/${analysisId}` as any);
-                    } else {
-                      console.warn("No analysisId found for contract:", item.contract.id);
-                    }
+                    router.push(`/analysis/${item.analysisId}` as any);
                   }}
                 >
                   <Text className="text-base font-semibold text-foreground" numberOfLines={2}>
-                    {item.contract.name}
+                    {item.contractName}
                   </Text>
                   <Text className="text-sm text-muted mt-2">
-                    {new Date(item.contract.createdAt).toLocaleDateString("en-US", {
+                    {new Date(item.createdAt).toLocaleDateString("en-US", {
                       year: "numeric",
                       month: "long",
                       day: "numeric",
