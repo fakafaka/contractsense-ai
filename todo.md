@@ -111,3 +111,11 @@
 - [x] Revert filter that hid contracts without analyses
 - [x] Add try-catch to createAnalysis calls to catch silent failures
 - [x] Test that completed analyses appear in History
+
+## Fix History List Item Tap Handler
+- [x] Check if History list items are pressable (TouchableOpacity/Pressable)
+- [x] Add onPress handler that navigates to Summary with analysisId
+- [x] Add console.log for debugging: console.log("History tap", analysisId)
+- [x] Add warning log when analysisId is missing
+- [x] Test tapping History items navigates to Summary correctly
+- [x] Confirmed root issue: analyses are not being saved to database (analysis: null)

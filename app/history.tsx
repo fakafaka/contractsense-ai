@@ -59,8 +59,12 @@ export default function HistoryScreen() {
                   className="bg-surface rounded-xl border border-border p-5"
                   style={{ opacity: 1 }}
                   onPress={() => {
-                    if (item.analysis?.id) {
-                      router.push(`/analysis/${item.analysis.id}` as any);
+                    const analysisId = item.analysis?.id;
+                    console.log("History tap", analysisId);
+                    if (analysisId) {
+                      router.push(`/analysis/${analysisId}` as any);
+                    } else {
+                      console.warn("No analysisId found for contract:", item.contract.id);
                     }
                   }}
                 >
