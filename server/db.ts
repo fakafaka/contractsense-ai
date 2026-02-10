@@ -215,6 +215,13 @@ export async function deleteAnalysis(analysisId: number): Promise<void> {
   await db.delete(analyses).where(eq(analyses.id, analysisId));
 }
 
+export async function getAllAnalyses(): Promise<Analysis[]> {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(analyses).orderBy(desc(analyses.createdAt));
+}
+
 // ============================================
 // Subscription Operations
 // ============================================

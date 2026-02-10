@@ -132,3 +132,9 @@
 - [x] Remove contractId sanitization to 0 in db.createAnalysis()
 - [x] Throw error if contractId is invalid instead of clamping
 - [x] Add fallback text "Untitled contract" in History UI when contractName is null
+
+## Minimal History Fix (No Joins)
+- [x] Query analyses table directly without joins
+- [x] Return analysisId, createdAt, and title (from contract name or "Untitled")
+- [x] Update History UI to use simplified data structure
+- [x] No filters, no userId logic, no refactoring

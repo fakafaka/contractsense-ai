@@ -63,7 +63,7 @@ export default function HistoryScreen() {
                   }}
                 >
                   <Text className="text-base font-semibold text-foreground" numberOfLines={2}>
-                    {item.contractName || "Untitled contract"}
+                    {item.title}
                   </Text>
                   <Text className="text-sm text-muted mt-2">
                     {new Date(item.createdAt).toLocaleDateString("en-US", {

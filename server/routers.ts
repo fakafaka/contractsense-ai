@@ -186,10 +186,19 @@ export const appRouter = router({
         };
       }),
 
-    // Get all analyses with contract names (no user filter)
+    // Get all analyses (no user filter)
     list: publicProcedure.query(async () => {
-      const analyses = await db.getAllAnalysesWithContractNames();
-      return analyses;
+      const analyses = await db.getAllAnalyses();
+      const results = [];
+      for (const analysis of analyses) {
+        const contract = await db.getContractById(analysis.contractId);
+        results.push({
+          analysisId: analysis.id,
+          createdAt: analysis.createdAt,
+          title: contract?.name || "Untitled"
+        });
+      }
+      return results;
     }),
 
     // Get a specific analysis
