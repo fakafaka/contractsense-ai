@@ -102,3 +102,12 @@
 - [x] Fix minimal diff to ensure correct ID is used throughout
 - [x] Filter out contracts without analyses in History list
 - [x] Add safety check before navigation to prevent /analysis/undefined
+
+## Fix Empty History List After Navigation Fix
+- [x] Check which table/endpoint History reads from (contracts.list)
+- [x] Check if analyze mutation writes to the same tables
+- [x] Verify userId filtering is removed (no auth in MVP)
+- [x] Ensure getAllContractsWithAnalyses returns all records without userId filter
+- [x] Revert filter that hid contracts without analyses
+- [x] Add try-catch to createAnalysis calls to catch silent failures
+- [x] Test that completed analyses appear in History

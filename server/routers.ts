@@ -69,15 +69,22 @@ export const appRouter = router({
         }));
 
         // Save analysis
-        const analysisId = await db.createAnalysis({
-          contractId,
-          userId: null, // No user authentication in MVP
-          summary: analysis.summary,
-          mainObligations: JSON.stringify(analysis.mainObligations),
-          potentialRisks: JSON.stringify(analysis.potentialRisks),
-          redFlags: JSON.stringify(analysis.redFlags),
-          processingTimeMs,
-        });
+        let analysisId: number;
+        try {
+          analysisId = await db.createAnalysis({
+            contractId,
+            userId: null, // No user authentication in MVP
+            summary: analysis.summary,
+            mainObligations: JSON.stringify(analysis.mainObligations),
+            potentialRisks: JSON.stringify(analysis.potentialRisks),
+            redFlags: JSON.stringify(analysis.redFlags),
+            processingTimeMs,
+          });
+          console.log('[analyzeText] Analysis saved successfully with ID:', analysisId);
+        } catch (error) {
+          console.error('[analyzeText] FAILED to save analysis:', error);
+          throw new Error(`Failed to save analysis: ${error instanceof Error ? error.message : String(error)}`);
+        }
 
         return {
           contractId,
@@ -155,15 +162,22 @@ export const appRouter = router({
         }));
 
         // Save analysis
-        const analysisId = await db.createAnalysis({
-          contractId,
-          userId: null, // No user authentication in MVP
-          summary: analysis.summary,
-          mainObligations: JSON.stringify(analysis.mainObligations),
-          potentialRisks: JSON.stringify(analysis.potentialRisks),
-          redFlags: JSON.stringify(analysis.redFlags),
-          processingTimeMs,
-        });
+        let analysisId: number;
+        try {
+          analysisId = await db.createAnalysis({
+            contractId,
+            userId: null, // No user authentication in MVP
+            summary: analysis.summary,
+            mainObligations: JSON.stringify(analysis.mainObligations),
+            potentialRisks: JSON.stringify(analysis.potentialRisks),
+            redFlags: JSON.stringify(analysis.redFlags),
+            processingTimeMs,
+          });
+          console.log('[analyzeText] Analysis saved successfully with ID:', analysisId);
+        } catch (error) {
+          console.error('[analyzeText] FAILED to save analysis:', error);
+          throw new Error(`Failed to save analysis: ${error instanceof Error ? error.message : String(error)}`);
+        }
 
         return {
           contractId,
@@ -175,6 +189,8 @@ export const appRouter = router({
     // Get all contracts with analyses (no user filter)
     list: publicProcedure.query(async () => {
       const contractsWithAnalyses = await db.getAllContractsWithAnalyses();
+      console.log('[contracts.list] Found contracts:', contractsWithAnalyses.length);
+      console.log('[contracts.list] Sample:', JSON.stringify(contractsWithAnalyses[0], null, 2));
       return contractsWithAnalyses.map((item) => ({
         contract: item.contract,
         analysis: item.analysis

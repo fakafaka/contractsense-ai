@@ -53,7 +53,7 @@ export default function HistoryScreen() {
           /* Contract List */
           <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
             <View className="gap-3">
-              {contracts.filter((item) => item.analysis?.id).map((item) => (
+              {contracts.map((item) => (
                 <TouchableOpacity
                   key={item.contract.id}
                   className="bg-surface rounded-xl border border-border p-5"

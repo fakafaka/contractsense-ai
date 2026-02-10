@@ -1,0 +1,13 @@
+{
+  "query": "SELECT COUNT(*) as contract_count FROM contracts;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2m7Fn1T4rxeAis3.root --database RS3Tk3gBRFpq7dhh58DCcr --execute SELECT COUNT(*) as contract_count FROM contracts;",
+  "rows": [
+    {
+      "contract_count": "20"
+    }
+  ],
+  "messages": [],
+  "stdout": "contract_count\n20\n",
+  "stderr": "",
+  "execution_time_ms": 802
+}
