@@ -143,3 +143,8 @@
 - [x] Implement robust insertId extraction in createContract()
 - [x] Handle multiple driver result formats (result.insertId, result[0].insertId, result.lastInsertRowid)
 - [x] Throw error if insertId is missing or invalid
+
+## Fix 502 Error in Preview
+- [x] Update dev:server script to set PORT=3000 HOST=0.0.0.0
+- [x] Update server/_core/index.ts to use PORT and HOST env vars
+- [x] Restart server and verify preview works

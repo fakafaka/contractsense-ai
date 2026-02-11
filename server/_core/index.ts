@@ -68,18 +68,14 @@ async function startServer() {
     }),
   );
 
-  const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  const PORT = Number(process.env.PORT || 3000);
+  const HOST = process.env.HOST || "0.0.0.0";
 
-  if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
-  }
-
-  server.listen(port, () => {
+  server.listen(PORT, HOST, () => {
     const version = "v2.0";
     const timestamp = new Date().toISOString();
     console.log(`[BACKEND VERSION] ${version} ${timestamp}`);
-    console.log(`[api] server listening on port ${port}`);
+    console.log(`[api] server listening on ${HOST}:${PORT}`);
   });
 }
 
