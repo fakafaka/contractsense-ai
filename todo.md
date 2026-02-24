@@ -148,3 +148,13 @@
 - [x] Update dev:server script to set PORT=3000 HOST=0.0.0.0
 - [x] Update server/_core/index.ts to use PORT and HOST env vars
 - [x] Restart server and verify preview works
+
+## App Store Readiness & AI Cost Reduction
+- [x] Add Quick Analysis mode (default, strict token limit, short output)
+- [x] Add Deep Analysis mode (button, longer but bounded output)
+- [x] Backend: cache analysis by document hash (text hash)
+- [x] Backend: add idempotency via Idempotency-Key header
+- [x] Backend: add rate limiting per IP/device
+- [x] Add "About & Privacy" screen with disclaimers
+- [x] Add "Delete my data" button in About screen
+- [x] Implement 24h auto-delete for stored documents

@@ -1,4 +1,4 @@
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, 
@@ -217,6 +217,35 @@ export async function deleteAnalysis(analysisId: number): Promise<void> {
   if (!db) throw new Error("Database not available");
   
   await db.delete(analyses).where(eq(analyses.id, analysisId));
+}
+
+/**
+ * Find cached analysis by content hash and mode
+ */
+export async function findCachedAnalysis(contentHash: string, mode: string): Promise<Analysis | null> {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db
+    .select()
+    .from(analyses)
+    .where(eq(analyses.contentHash, contentHash))
+    .orderBy(desc(analyses.createdAt))
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+/**
+ * Delete old analyses (older than 24h)
+ */
+export async function deleteOldAnalyses(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const result = await db.delete(analyses).where(lt(analyses.createdAt, cutoff)) as any;
+  return result.affectedRows || 0;
 }
 
 export async function getAllAnalyses(): Promise<Analysis[]> {

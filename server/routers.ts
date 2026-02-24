@@ -4,8 +4,9 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
-import { analyzeContract, extractTextFromPDF } from "./contract-analyzer";
+import { analyzeContract, extractTextFromPDF, computeContentHash } from "./contract-analyzer";
 import { storagePut } from "./storage";
+import { checkRateLimit, checkIdempotency, saveIdempotency } from "./rate-limiter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -28,10 +29,42 @@ export const appRouter = router({
         z.object({
           name: z.string().min(1).max(255),
           text: z.string().min(10),
+          mode: z.enum(["quick", "deep"]).optional().default("quick"),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const startTime = Date.now();
+        const mode = input.mode || "quick";
+        
+        // Rate limiting (10 requests per 15 minutes per IP)
+        const clientIp = ctx.req.ip || ctx.req.socket.remoteAddress || "unknown";
+        const rateLimit = checkRateLimit(`analysis:${clientIp}`, { windowMs: 15 * 60 * 1000, max: 10 });
+        if (!rateLimit.allowed) {
+          throw new Error(`Rate limit exceeded. Try again in ${Math.ceil((rateLimit.resetAt - Date.now()) / 1000 / 60)} minutes.`);
+        }
+        
+        // Idempotency check
+        const idempotencyKey = ctx.req.headers["idempotency-key"] as string | undefined;
+        if (idempotencyKey) {
+          const cached = checkIdempotency(idempotencyKey);
+          if (cached.exists) {
+            console.log(`[Analysis] Idempotency hit for key ${idempotencyKey}`);
+            return cached.result;
+          }
+        }
+        
+        // Check for cached analysis
+        const contentHash = computeContentHash(input.text);
+        const cached = await db.findCachedAnalysis(contentHash, mode);
+        
+        if (cached) {
+          console.log(`[Analysis] Cache hit for hash ${contentHash}`);
+          return {
+            analysisId: cached.id,
+            contractId: cached.contractId,
+            cached: true,
+          };
+        }
 
         // Create contract record (no user ID)
         const contractId = await db.createContract({
@@ -42,7 +75,7 @@ export const appRouter = router({
         });
 
         // Analyze the contract
-        const analysis = await analyzeContract(input.text);
+        const analysis = await analyzeContract(input.text, mode);
 
         // Calculate processing time with defensive checks
         const endTime = Date.now();
@@ -78,6 +111,8 @@ export const appRouter = router({
             mainObligations: JSON.stringify(analysis.mainObligations),
             potentialRisks: JSON.stringify(analysis.potentialRisks),
             redFlags: JSON.stringify(analysis.redFlags),
+            mode,
+            contentHash,
             processingTimeMs,
           });
           console.log('[analyzeText] Analysis saved successfully with ID:', analysisId);
@@ -85,12 +120,18 @@ export const appRouter = router({
           console.error('[analyzeText] FAILED to save analysis:', error);
           throw new Error(`Failed to save analysis: ${error instanceof Error ? error.message : String(error)}`);
         }
-
-        return {
+        
+        const result = {
           contractId,
           analysisId,
-          analysis,
         };
+        
+        // Save idempotency result
+        if (idempotencyKey) {
+          saveIdempotency(idempotencyKey, result);
+        }
+        
+        return result;
       }),
 
     // Upload and analyze a contract (PDF)
@@ -100,10 +141,12 @@ export const appRouter = router({
           name: z.string().min(1).max(255),
           pdfBase64: z.string(),
           fileSize: z.number(),
+          mode: z.enum(["quick", "deep"]).optional().default("quick"),
         })
       )
       .mutation(async ({ input }) => {
         const startTime = Date.now();
+        const mode = input.mode || "quick";
 
         // Check file size (10MB limit)
         if (input.fileSize > 10 * 1024 * 1024) {
@@ -118,6 +161,19 @@ export const appRouter = router({
 
         if (!text || text.length < 10) {
           throw new Error("Could not extract text from PDF. Please try uploading as text instead.");
+        }
+        
+        // Check for cached analysis
+        const contentHash = computeContentHash(text);
+        const cached = await db.findCachedAnalysis(contentHash, mode);
+        
+        if (cached) {
+          console.log(`[Analysis] Cache hit for hash ${contentHash}`);
+          return {
+            analysisId: cached.id,
+            contractId: cached.contractId,
+            cached: true,
+          };
         }
 
         // Upload PDF to storage
@@ -135,7 +191,7 @@ export const appRouter = router({
         });
 
         // Analyze the contract
-        const analysis = await analyzeContract(text);
+        const analysis = await analyzeContract(text, mode);
 
         // Calculate processing time with defensive checks
         const endTime = Date.now();
@@ -171,6 +227,8 @@ export const appRouter = router({
             mainObligations: JSON.stringify(analysis.mainObligations),
             potentialRisks: JSON.stringify(analysis.potentialRisks),
             redFlags: JSON.stringify(analysis.redFlags),
+            mode,
+            contentHash,
             processingTimeMs,
           });
           console.log('[analyzeText] Analysis saved successfully with ID:', analysisId);
@@ -199,6 +257,13 @@ export const appRouter = router({
         });
       }
       return results;
+    }),
+
+    // Delete all user data (for privacy compliance)
+    deleteAll: publicProcedure.mutation(async () => {
+      // Delete old analyses (24h+)
+      const deleted = await db.deleteOldAnalyses();
+      return { deleted };
     }),
 
     // Get a specific analysis

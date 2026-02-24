@@ -15,6 +15,7 @@ export default function UploadScreen() {
   const [contractText, setContractText] = useState("");
   const [contractName, setContractName] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisMode, setAnalysisMode] = useState<"quick" | "deep">("quick");
 
   const analyzeTextMutation = trpc.contracts.analyzeText.useMutation();
   const analyzePDFMutation = trpc.contracts.analyzePDF.useMutation();
@@ -78,6 +79,7 @@ export default function UploadScreen() {
     try {
       if (uploadMethod === "text") {
         const result = await analyzeTextMutation.mutateAsync({
+          mode: analysisMode,
           name: contractName.trim(),
           text: contractText.trim(),
         });
@@ -91,13 +93,14 @@ export default function UploadScreen() {
         router.replace(`/analysis/${result.analysisId}` as any);
       } else if (uploadMethod === "pdf" && pdfFile) {
         // Read PDF file as base64
-        const base64 = await FileSystem.readAsStringAsync(pdfFile.uri, {
+        const pdfBase64 = await FileSystem.readAsStringAsync(pdfFile.uri, {
           encoding: FileSystem.EncodingType.Base64,
         });
 
         const result = await analyzePDFMutation.mutateAsync({
+          mode: analysisMode,
           name: contractName.trim(),
-          pdfBase64: base64,
+          pdfBase64: pdfBase64,
           fileSize: pdfFile.size,
         });
 
@@ -271,6 +274,39 @@ export default function UploadScreen() {
                   This analysis is for informational purposes only and does not constitute legal
                   advice. Please consult with a qualified attorney for legal guidance.
                 </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Analysis Mode Selection */}
+          {uploadMethod && (
+            <View className="gap-3">
+              <Text className="text-base font-semibold text-foreground">Analysis Mode</Text>
+              <View className="flex-row gap-3">
+                <TouchableOpacity
+                  className={`flex-1 p-4 rounded-xl border-2 ${analysisMode === "quick" ? "border-primary bg-primary/10" : "border-border bg-surface"}`}
+                  style={{ opacity: 1 }}
+                  onPress={() => setAnalysisMode("quick")}
+                >
+                  <Text className={`text-base font-semibold text-center ${analysisMode === "quick" ? "text-primary" : "text-foreground"}`}>
+                    Quick
+                  </Text>
+                  <Text className="text-xs text-muted text-center mt-1">
+                    Faster, concise
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className={`flex-1 p-4 rounded-xl border-2 ${analysisMode === "deep" ? "border-primary bg-primary/10" : "border-border bg-surface"}`}
+                  style={{ opacity: 1 }}
+                  onPress={() => setAnalysisMode("deep")}
+                >
+                  <Text className={`text-base font-semibold text-center ${analysisMode === "deep" ? "text-primary" : "text-foreground"}`}>
+                    Deep
+                  </Text>
+                  <Text className="text-xs text-muted text-center mt-1">
+                    More detailed
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           )}

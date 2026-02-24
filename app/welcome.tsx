@@ -38,6 +38,17 @@ export default function WelcomeScreen() {
         >
           <Text className="text-white font-bold text-xl text-center">Get Started</Text>
         </TouchableOpacity>
+        
+        {/* About & Privacy Link */}
+        <TouchableOpacity
+          className="py-3"
+          style={{ opacity: 1 }}
+          onPress={() => router.push("/about" as any)}
+        >
+          <Text className="text-center font-semibold" style={{ color: colors.primary }}>
+            About & Privacy
+          </Text>
+        </TouchableOpacity>
       </View>
     </ScreenContainer>
   );

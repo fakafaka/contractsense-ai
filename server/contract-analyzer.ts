@@ -1,5 +1,8 @@
 import { invokeLLM } from "./_core/llm";
 import { PDFParse } from "pdf-parse";
+import crypto from "crypto";
+
+export type AnalysisMode = "quick" | "deep";
 
 export interface AnalysisResult {
   summary: string;
@@ -14,14 +17,29 @@ export interface AnalysisResult {
     title: string;
     description: string;
   }>;
+  mode: AnalysisMode;
+  cached?: boolean;
+  contentHash?: string;
+}
+
+/**
+ * Compute SHA256 hash of normalized text for deduplication
+ */
+export function computeContentHash(text: string): string {
+  const normalized = text.trim().replace(/\s+/g, " ").replace(/\r\n/g, "\n");
+  return crypto.createHash("sha256").update(normalized, "utf8").digest("hex");
 }
 
 /**
  * Analyzes a contract using AI to extract key information in plain English
  * @param contractText The full text of the contract
+ * @param mode Analysis mode: "quick" (default, strict limits) or "deep" (longer output)
  * @returns Structured analysis results
  */
-export async function analyzeContract(contractText: string): Promise<AnalysisResult> {
+export async function analyzeContract(
+  contractText: string,
+  mode: AnalysisMode = "quick"
+): Promise<AnalysisResult> {
   const startTime = Date.now();
 
   // System prompt that sets the context and tone
@@ -35,7 +53,11 @@ IMPORTANT GUIDELINES:
 - This is NOT legal advice - you're helping people understand, not advising them legally
 - Be objective and balanced - don't exaggerate risks but don't minimize them either`;
 
-  const userPrompt = `Analyze this contract BRIEFLY in plain English. Total output must be 250-400 words max.
+  const isQuick = mode === "quick";
+  const maxWords = isQuick ? 200 : 400;
+  const maxTokens = isQuick ? 300 : 600;
+
+  const userPrompt = `Analyze this contract BRIEFLY in plain English. Total output must be ${isQuick ? "150-200" : "250-400"} words max.
 
 CONTRACT TEXT:
 ${contractText}
@@ -80,6 +102,7 @@ STRICT RULES:
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
+      max_tokens: maxTokens,
     });
 
     const content = response.choices[0].message.content;
@@ -108,6 +131,8 @@ STRICT RULES:
             description: flag.description || "",
           }))
         : [],
+      mode,
+      contentHash: computeContentHash(contractText),
     };
 
     const processingTime = Date.now() - startTime;
