@@ -55,6 +55,7 @@ export const analyses = mysqlTable("analyses", {
   processingTimeMs: int("processingTimeMs").notNull().default(0), // Time taken to analyze, defaults to 0 if unavailable
   mode: mysqlEnum("mode", ["quick", "deep"]).default("quick").notNull(), // Analysis mode
   contentHash: varchar("contentHash", { length: 64 }), // SHA256 hash for deduplication
+  deleteToken: varchar("deleteToken", { length: 64 }).notNull(), // Unique token for secure deletion
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

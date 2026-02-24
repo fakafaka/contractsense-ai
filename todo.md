@@ -158,3 +158,11 @@
 - [x] Add "About & Privacy" screen with disclaimers
 - [x] Add "Delete my data" button in About screen
 - [x] Implement 24h auto-delete for stored documents
+
+## App Store Safety: Per-Report Delete
+- [x] Add deleteToken column to analyses schema
+- [x] Generate unique deleteToken on analysis creation
+- [x] Return deleteToken in analyzeText/analyzePDF responses
+- [x] Replace deleteAll with deleteReport endpoint (requires deleteToken)
+- [x] Update About & Privacy screen to explain deletion policy
+- [x] Guard deleteAll as dev-only

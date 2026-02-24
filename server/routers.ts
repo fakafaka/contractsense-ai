@@ -55,10 +55,12 @@ export const appRouter = router({
         
         // Check for cached analysis
         const contentHash = computeContentHash(input.text);
+        console.log(`[Cache Test] contentHash: ${contentHash}, mode: ${mode}`);
         const cached = await db.findCachedAnalysis(contentHash, mode);
+        console.log(`[Cache Test] db.findCachedAnalysis result: ${cached ? 'HIT' : 'MISS'}`);
         
         if (cached) {
-          console.log(`[Analysis] Cache hit for hash ${contentHash}`);
+          console.log(`[Cache Test] Returning cached analysis (analysisId: ${cached.id})`);
           return {
             analysisId: cached.id,
             contractId: cached.contractId,
@@ -75,6 +77,7 @@ export const appRouter = router({
         });
 
         // Analyze the contract
+        console.log(`[Cache Test] Cache miss - calling AI model`);
         const analysis = await analyzeContract(input.text, mode);
 
         // Calculate processing time with defensive checks
@@ -101,6 +104,9 @@ export const appRouter = router({
           summaryLen: analysis.summary?.length 
         }));
 
+        // Generate delete token for secure deletion
+        const deleteToken = computeContentHash(`${contractId}-${Date.now()}-${Math.random()}`);
+
         // Save analysis
         let analysisId: number;
         try {
@@ -113,6 +119,7 @@ export const appRouter = router({
             redFlags: JSON.stringify(analysis.redFlags),
             mode,
             contentHash,
+            deleteToken,
             processingTimeMs,
           });
           console.log('[analyzeText] Analysis saved successfully with ID:', analysisId);
@@ -124,6 +131,7 @@ export const appRouter = router({
         const result = {
           contractId,
           analysisId,
+          deleteToken,
         };
         
         // Save idempotency result
@@ -217,6 +225,9 @@ export const appRouter = router({
           summaryLen: analysis.summary?.length 
         }));
 
+        // Generate delete token for secure deletion
+        const deleteToken = computeContentHash(`${contractId}-${Date.now()}-${Math.random()}`);
+
         // Save analysis
         let analysisId: number;
         try {
@@ -229,6 +240,7 @@ export const appRouter = router({
             redFlags: JSON.stringify(analysis.redFlags),
             mode,
             contentHash,
+            deleteToken,
             processingTimeMs,
           });
           console.log('[analyzeText] Analysis saved successfully with ID:', analysisId);
@@ -259,11 +271,223 @@ export const appRouter = router({
       return results;
     }),
 
-    // Delete all user data (for privacy compliance)
+    // DEV ONLY: Delete all old analyses (24h+)
     deleteAll: publicProcedure.mutation(async () => {
-      // Delete old analyses (24h+)
+      if (process.env.NODE_ENV === "production") {
+        throw new Error("deleteAll is not available in production");
+      }
       const deleted = await db.deleteOldAnalyses();
       return { deleted };
+    }),
+
+    // Delete a specific report by deleteToken
+    deleteReport: publicProcedure
+      .input(z.object({ deleteToken: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        const analysis = await db.getAnalysisByDeleteToken(input.deleteToken);
+        if (!analysis) {
+          throw new Error("Report not found or already deleted");
+        }
+        await db.deleteAnalysis(analysis.id);
+        await db.deleteContract(analysis.contractId);
+        return { success: true };
+      }),
+
+    // DEV ONLY: Cache smoke test
+    cacheSmokeTest: publicProcedure.query(async () => {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error("cacheSmokeTest is not available in production");
+      }
+
+      const testText = "This Service Agreement is between Provider and Client. Provider will deliver consulting services for $5000/month. Either party may terminate with 30 days notice.";
+      const mode = "quick";
+
+      console.log("\n=== CACHE SMOKE TEST START ===");
+
+      // CALL 1
+      console.log("\n--- CALL 1 ---");
+      const contentHash1 = computeContentHash(testText);
+      console.log(`contentHash: ${contentHash1}`);
+      const cached1 = await db.findCachedAnalysis(contentHash1, mode);
+      console.log(`Cache lookup: ${cached1 ? 'HIT' : 'MISS'}`);
+      
+      let result1;
+      if (cached1) {
+        console.log(`Model called: NO (cache hit)`);
+        result1 = { analysisId: cached1.id, contractId: cached1.contractId, cached: true };
+      } else {
+        console.log(`Model called: YES (calling analyzeContract)`);
+        const contractId = await db.createContract({
+          userId: null,
+          name: "Cache Test Contract",
+          contentType: "text",
+          originalText: testText,        });
+        const analysis = await analyzeContract(testText, mode);
+        const deleteToken1 = computeContentHash(`${contractId}-${Date.now()}-${Math.random()}`);
+        const analysisId = await db.createAnalysis({
+          contractId,
+          mode,
+          contentHash: contentHash1,
+          summary: analysis.summary,
+          mainObligations: JSON.stringify(analysis.mainObligations),
+          potentialRisks: JSON.stringify(analysis.potentialRisks),
+          redFlags: JSON.stringify(analysis.redFlags),
+          deleteToken: deleteToken1,
+          processingTimeMs: 0,
+        });
+        result1 = { analysisId, contractId, cached: false };
+      }
+      console.log(`Result 1: analysisId=${result1.analysisId}, cached=${result1.cached}`);
+
+      // CALL 2 (identical input)
+      console.log("\n--- CALL 2 ---");
+      const contentHash2 = computeContentHash(testText);
+      console.log(`contentHash: ${contentHash2}`);
+      const cached2 = await db.findCachedAnalysis(contentHash2, mode);
+      console.log(`Cache lookup: ${cached2 ? 'HIT' : 'MISS'}`);
+      
+      let result2;
+      if (cached2) {
+        console.log(`Model called: NO (cache hit)`);
+        result2 = { analysisId: cached2.id, contractId: cached2.contractId, cached: true };
+      } else {
+        console.log(`Model called: YES (calling analyzeContract)`);
+        const contractId = await db.createContract({
+          userId: null,
+          name: "Cache Test Contract 2",
+          contentType: "text",
+          originalText: testText,
+        });
+        const analysis = await analyzeContract(testText, mode);
+        const deleteToken2 = computeContentHash(`${contractId}-${Date.now()}-${Math.random()}`);
+        const analysisId = await db.createAnalysis({
+          contractId,
+          mode,
+          contentHash: contentHash2,
+          summary: analysis.summary,
+          mainObligations: JSON.stringify(analysis.mainObligations),
+          potentialRisks: JSON.stringify(analysis.potentialRisks),
+          redFlags: JSON.stringify(analysis.redFlags),
+          deleteToken: deleteToken2,
+          processingTimeMs: 0,
+        });
+        result2 = { analysisId, contractId, cached: false };
+      }
+      console.log(`Result 2: analysisId=${result2.analysisId}, cached=${result2.cached}`);
+
+      console.log("\n=== CACHE SMOKE TEST END ===");
+
+      return {
+        first: { analysisId: result1.analysisId, cached: result1.cached },
+        second: { analysisId: result2.analysisId, cached: result2.cached },
+        cacheWorking: result2.cached === true,
+      };
+    }),
+
+    // DEV ONLY: Idempotency smoke test
+    idempotencySmokeTest: publicProcedure.query(async ({ ctx }) => {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error("idempotencySmokeTest is not available in production");
+      }
+
+      const testText = "This Service Agreement is between Provider and Client. Provider will deliver consulting services for $5000/month. Either party may terminate with 30 days notice.";
+      const mode = "quick";
+      const idempotencyKey = `test-idempotency-${Date.now()}`;
+
+      console.log("\n=== IDEMPOTENCY SMOKE TEST START ===");
+      console.log(`Idempotency-Key: ${idempotencyKey}`);
+
+      // CALL 1
+      console.log("\n--- CALL 1 ---");
+      let idempotencyCheck1 = checkIdempotency(idempotencyKey);
+      console.log(`Idempotency check: ${idempotencyCheck1.exists ? 'EXISTS' : 'NOT FOUND'}`);
+      
+      let result1;
+      if (idempotencyCheck1.exists) {
+        console.log(`Model called: NO (idempotency hit)`);
+        result1 = idempotencyCheck1.result;
+      } else {
+        console.log(`Model called: YES (new request)`);
+        const contentHash = computeContentHash(testText);
+        const cached = await db.findCachedAnalysis(contentHash, mode);
+        
+        if (cached) {
+          result1 = { analysisId: cached.id, contractId: cached.contractId, cached: true };
+        } else {
+          const contractId = await db.createContract({
+            userId: null,
+            name: "Idempotency Test Contract",
+            contentType: "text",
+            originalText: testText,
+          });
+          const analysis = await analyzeContract(testText, mode);
+          const deleteToken = computeContentHash(`${contractId}-${Date.now()}-${Math.random()}`);
+          const analysisId = await db.createAnalysis({
+            contractId,
+            mode,
+            contentHash,
+            summary: analysis.summary,
+            mainObligations: JSON.stringify(analysis.mainObligations),
+            potentialRisks: JSON.stringify(analysis.potentialRisks),
+            redFlags: JSON.stringify(analysis.redFlags),
+            deleteToken,
+            processingTimeMs: 0,
+          });
+          result1 = { analysisId, contractId, cached: false };
+        }
+        saveIdempotency(idempotencyKey, result1);
+      }
+      console.log(`Result 1: analysisId=${result1.analysisId}, cached=${result1.cached}`);
+
+      // CALL 2 (same idempotency key)
+      console.log("\n--- CALL 2 ---");
+      let idempotencyCheck2 = checkIdempotency(idempotencyKey);
+      console.log(`Idempotency check: ${idempotencyCheck2.exists ? 'EXISTS' : 'NOT FOUND'}`);
+      
+      let result2;
+      if (idempotencyCheck2.exists) {
+        console.log(`Model called: NO (idempotency hit)`);
+        result2 = idempotencyCheck2.result;
+      } else {
+        console.log(`Model called: YES (new request)`);
+        const contentHash = computeContentHash(testText);
+        const cached = await db.findCachedAnalysis(contentHash, mode);
+        
+        if (cached) {
+          result2 = { analysisId: cached.id, contractId: cached.contractId, cached: true };
+        } else {
+          const contractId = await db.createContract({
+            userId: null,
+            name: "Idempotency Test Contract 2",
+            contentType: "text",
+            originalText: testText,
+          });
+          const analysis = await analyzeContract(testText, mode);
+          const deleteToken = computeContentHash(`${contractId}-${Date.now()}-${Math.random()}`);
+          const analysisId = await db.createAnalysis({
+            contractId,
+            mode,
+            contentHash,
+            summary: analysis.summary,
+            mainObligations: JSON.stringify(analysis.mainObligations),
+            potentialRisks: JSON.stringify(analysis.potentialRisks),
+            redFlags: JSON.stringify(analysis.redFlags),
+            deleteToken,
+            processingTimeMs: 0,
+          });
+          result2 = { analysisId, contractId, cached: false };
+        }
+        saveIdempotency(idempotencyKey, result2);
+      }
+      console.log(`Result 2: analysisId=${result2.analysisId}, cached=${result2.cached}`);
+
+      console.log("\n=== IDEMPOTENCY SMOKE TEST END ===");
+
+      return {
+        first: { analysisId: result1.analysisId, cached: result1.cached },
+        second: { analysisId: result2.analysisId, cached: result2.cached },
+        sameAnalysisId: result1.analysisId === result2.analysisId,
+      };
     }),
 
     // Get a specific analysis

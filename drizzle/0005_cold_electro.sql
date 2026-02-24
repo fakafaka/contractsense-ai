@@ -1,0 +1,1 @@
+ALTER TABLE `analyses` ADD `deleteToken` varchar(64) NOT NULL;

@@ -36,6 +36,13 @@
       "when": 1771921798890,
       "tag": "0004_wide_lifeguard",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1771924506517,
+      "tag": "0005_cold_electro",
+      "breakpoints": true
     }
   ]
 }

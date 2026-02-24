@@ -197,6 +197,13 @@ export async function getAnalysisById(analysisId: number): Promise<Analysis | nu
   return result[0] || null;
 }
 
+export async function getAnalysisByDeleteToken(deleteToken: string): Promise<Analysis | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(analyses).where(eq(analyses.deleteToken, deleteToken)).limit(1);
+  return result[0] || null;
+}
+
 export async function getAnalysisByContractId(contractId: number): Promise<Analysis | null> {
   const db = await getDb();
   if (!db) return null;

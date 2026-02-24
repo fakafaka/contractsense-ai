@@ -7,26 +7,12 @@ import { trpc } from "@/lib/trpc";
 
 export default function AboutScreen() {
   const colors = useColors();
-  const deleteAllMutation = trpc.contracts.deleteAll.useMutation();
-
   const handleDeleteData = () => {
     Alert.alert(
-      "Delete All Data",
-      "This will permanently delete all your uploaded contracts and analyses from our servers. This action cannot be undone.",
+      "Delete My Data",
+      "All analyses are automatically deleted after 24 hours. To delete a specific report immediately, go to History and swipe left on the report (feature coming soon).",
       [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteAllMutation.mutateAsync();
-              Alert.alert("Success", "All your data has been deleted from our servers.");
-            } catch (error) {
-              Alert.alert("Error", "Failed to delete data. Please try again.");
-            }
-          },
-        },
+        { text: "OK" },
       ]
     );
   };
