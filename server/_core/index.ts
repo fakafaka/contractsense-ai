@@ -1,53 +1,71 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
-import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
+import { getAnalysisQueueStats } from "../analysis-queue";
 import { createContext } from "./context";
-
-function isPortAvailable(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.listen(port, () => {
-      server.close(() => resolve(true));
-    });
-    server.on("error", () => resolve(false));
-  });
-}
-
-async function findAvailablePort(startPort: number = 3000): Promise<number> {
-  for (let port = startPort; port < startPort + 20; port++) {
-    if (await isPortAvailable(port)) {
-      return port;
-    }
-  }
-  throw new Error(`No available port found starting from ${startPort}`);
-}
+import { getRetentionSweepStats, startRetentionSweep } from "../retention";
+import { canAccessOpsEndpoints, isRetentionSweepHealthy } from "./ops";
 
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  app.set("trust proxy", 1);
+  const stopRetentionSweep = startRetentionSweep();
 
-  // Enable CORS for all routes - reflect the request origin to support credentials
+  const allowedOrigins = (process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (isProduction && allowedOrigins.length === 0) {
+    throw new Error("CORS_ORIGINS must be configured in production");
+  }
+
+  if (isProduction && allowedOrigins.includes("*")) {
+    throw new Error("CORS_ORIGINS cannot contain '*' in production when credentials are enabled");
+  }
+
+  const allowAllOrigins = !isProduction && (allowedOrigins.length === 0 || allowedOrigins.includes("*"));
+
+  // CORS policy: allow-list origins from CORS_ORIGINS (comma-separated).
+  // If unset or contains "*", fallback to allow-all behavior for compatibility.
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (origin) {
+
+    if (origin && (allowAllOrigins || allowedOrigins.includes(origin))) {
       res.header("Access-Control-Allow-Origin", origin);
+      res.header("Vary", "Origin");
     }
+
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.header(
       "Access-Control-Allow-Headers",
-      "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Origin, X-Requested-With, Content-Type, Accept, Authorization, Idempotency-Key",
     );
-    res.header("Access-Control-Allow-Credentials", "true");
+    if (origin && (allowAllOrigins || allowedOrigins.includes(origin))) {
+      res.header("Access-Control-Allow-Credentials", "true");
+    }
 
     // Handle preflight requests
     if (req.method === "OPTIONS") {
+      if (origin && !allowAllOrigins && !allowedOrigins.includes(origin)) {
+        res.sendStatus(403);
+        return;
+      }
       res.sendStatus(200);
       return;
     }
+
+    if (origin && !allowAllOrigins && !allowedOrigins.includes(origin)) {
+      res.status(403).json({ error: "CORS origin denied" });
+      return;
+    }
+
     next();
   });
 
@@ -60,6 +78,39 @@ async function startServer() {
     res.json({ ok: true, timestamp: Date.now() });
   });
 
+
+  app.get("/api/ready", (_req, res) => {
+    const retention = getRetentionSweepStats();
+    const { healthy, ageMs, staleThresholdMs } = isRetentionSweepHealthy(retention);
+
+    if (!healthy) {
+      res.status(503).json({
+        ok: false,
+        reason: "retention_sweep_stale",
+        ageMs,
+        staleThresholdMs,
+      });
+      return;
+    }
+
+    res.json({ ok: true });
+  });
+
+  app.get("/api/metrics", (req, res) => {
+    if (!canAccessOpsEndpoints(req)) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    const retention = getRetentionSweepStats();
+    const queue = getAnalysisQueueStats();
+    res.json({
+      timestamp: Date.now(),
+      uptimeSec: Math.floor(process.uptime()),
+      memory: process.memoryUsage(),
+      retention,
+      queue,
+    });
+  });
   app.use(
     "/api/trpc",
     createExpressMiddleware({
@@ -71,6 +122,32 @@ async function startServer() {
   const PORT = Number(process.env.PORT || 3000);
   const HOST = process.env.HOST || "0.0.0.0";
 
+
+  let isShuttingDown = false;
+  const shutdown = (signal: "SIGINT" | "SIGTERM") => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`[api] received ${signal}, shutting down`);
+    stopRetentionSweep?.();
+    server.close((error) => {
+      if (error) {
+        console.error("[api] server close failed", error);
+        process.exitCode = 1;
+      }
+      process.exit();
+    });
+
+    const forceShutdownTimer = setTimeout(() => {
+      console.error("[api] forced shutdown after timeout");
+      process.exit(1);
+    }, 10_000);
+    if (typeof (forceShutdownTimer as any).unref === "function") {
+      (forceShutdownTimer as any).unref();
+    }
+  };
+
+  process.once("SIGINT", () => shutdown("SIGINT"));
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
   server.listen(PORT, HOST, () => {
     const version = "v2.0";
     const timestamp = new Date().toISOString();

@@ -175,3 +175,71 @@ export async function extractTextFromPDF(pdfBuffer: Buffer): Promise<string> {
     throw new Error("Failed to extract text from PDF. Please try uploading as text instead.");
   }
 }
+
+
+export type AnalysisQualityReport = {
+  score: number;
+  checks: {
+    summaryLengthOk: boolean;
+    obligationsCountOk: boolean;
+    risksCountOk: boolean;
+    redFlagsCountOk: boolean;
+    neutralToneOk: boolean;
+  };
+  suggestions: string[];
+};
+
+function wordCount(text: string) {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function hasImperativeTone(text: string) {
+  return /\b(you must|you should|you need to|do not sign|never agree)\b/i.test(text);
+}
+
+export function evaluateAnalysisQuality(
+  analysis: Pick<AnalysisResult, "summary" | "mainObligations" | "potentialRisks" | "redFlags" | "mode">,
+): AnalysisQualityReport {
+  const isQuick = analysis.mode === "quick";
+  const summaryWords = wordCount(analysis.summary || "");
+
+  const summaryLengthOk = isQuick
+    ? summaryWords >= 15 && summaryWords <= 70
+    : summaryWords >= 25 && summaryWords <= 110;
+  const obligationsCountOk = analysis.mainObligations.length >= 3 && analysis.mainObligations.length <= 5;
+  const risksCountOk = analysis.potentialRisks.length >= 3 && analysis.potentialRisks.length <= 5;
+  const redFlagsCountOk = analysis.redFlags.length >= 3 && analysis.redFlags.length <= 5;
+  const allText = [
+    analysis.summary,
+    ...analysis.mainObligations,
+    ...analysis.potentialRisks.map((r) => `${r.title} ${r.description}`),
+    ...analysis.redFlags.map((r) => `${r.title} ${r.description}`),
+  ].join(" ");
+  const neutralToneOk = !hasImperativeTone(allText);
+
+  let score = 100;
+  if (!summaryLengthOk) score -= 20;
+  if (!obligationsCountOk) score -= 20;
+  if (!risksCountOk) score -= 20;
+  if (!redFlagsCountOk) score -= 20;
+  if (!neutralToneOk) score -= 20;
+
+  const suggestions: string[] = [];
+  if (!summaryLengthOk) suggestions.push("Keep summary concise and within target word range for the selected mode.");
+  if (!obligationsCountOk) suggestions.push("Return 3-5 concrete obligation bullets.");
+  if (!risksCountOk) suggestions.push("Return 3-5 potential risks with short descriptions.");
+  if (!redFlagsCountOk) suggestions.push("Return 3-5 red flags grouped by category.");
+  if (!neutralToneOk) suggestions.push("Use neutral wording and avoid imperative legal advice statements.");
+
+  return {
+    score: Math.max(0, score),
+    checks: {
+      summaryLengthOk,
+      obligationsCountOk,
+      risksCountOk,
+      redFlagsCountOk,
+      neutralToneOk,
+    },
+    suggestions,
+  };
+}

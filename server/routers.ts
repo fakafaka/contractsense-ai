@@ -1,12 +1,36 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
-import { analyzeContract, extractTextFromPDF, computeContentHash } from "./contract-analyzer";
+import { analyzeContract, evaluateAnalysisQuality, extractTextFromPDF, computeContentHash } from "./contract-analyzer";
 import { storagePut } from "./storage";
 import { checkRateLimit, checkIdempotency, saveIdempotency } from "./rate-limiter";
+import { cancelAnalysisJob, enqueueAnalysisJob, getAnalysisJob } from "./analysis-queue";
+import { verifyAppleSubscriptionReceipt } from "./billing";
+
+
+function ensureAdmin(user: { role?: string }) {
+  if (user.role !== "admin") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Admin access required",
+    });
+  }
+}
+
+async function ensureModeAllowed(userId: number, mode: "quick" | "deep") {
+  if (mode !== "deep") return;
+  const subscription = await db.getOrCreateUserSubscription(userId);
+  if (subscription.plan !== "premium") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Deep analysis is a premium feature. Please upgrade your plan.",
+    });
+  }
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -21,10 +45,170 @@ export const appRouter = router({
     }),
   }),
 
-  // Contract analysis features (no authentication required)
+  // Contract analysis features
   contracts: router({
+    enqueueTextAsync: protectedProcedure
+      .input(
+        z.object({
+          name: z.string().min(1).max(255),
+          text: z.string().min(10),
+          mode: z.enum(["quick", "deep"]).optional().default("quick"),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        await ensureModeAllowed(ctx.user.id, input.mode);
+        return enqueueAnalysisJob(
+          {
+            name: input.name,
+            text: input.text,
+            mode: input.mode,
+            contentType: "text",
+          },
+          ctx.user.id,
+        );
+      }),
+
+    enqueuePDFAsync: protectedProcedure
+      .input(
+        z.object({
+          name: z.string().min(1).max(255),
+          pdfBase64: z.string(),
+          fileSize: z.number(),
+          mode: z.enum(["quick", "deep"]).optional().default("quick"),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        await ensureModeAllowed(ctx.user.id, input.mode);
+        if (input.fileSize > 10 * 1024 * 1024) {
+          throw new Error("PDF file size must be less than 10MB");
+        }
+
+        const pdfBuffer = Buffer.from(input.pdfBase64, "base64");
+        const text = await extractTextFromPDF(pdfBuffer);
+        if (!text || text.length < 10) {
+          throw new Error("Could not extract text from PDF. Please try uploading as text instead.");
+        }
+
+        const fileKey = `contracts/${ctx.user.id}/${Date.now()}-${input.name}`;
+        const { url: fileUrl } = await storagePut(fileKey, pdfBuffer, "application/pdf");
+
+        return enqueueAnalysisJob(
+          {
+            name: input.name,
+            text,
+            mode: input.mode,
+            contentType: "pdf",
+            fileUrl,
+            fileSize: input.fileSize,
+          },
+          ctx.user.id,
+        );
+      }),
+
+    getJobStatus: protectedProcedure
+      .input(z.object({ jobId: z.string().min(1) }))
+      .query(({ input, ctx }) => {
+        const job = getAnalysisJob(input.jobId, ctx.user.id);
+        if (!job) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+        }
+        return job;
+      }),
+
+
+    adminSetSubscription: protectedProcedure
+      .input(
+        z.object({
+          userId: z.number().int().positive(),
+          plan: z.enum(["free", "premium"]),
+          monthlyLimit: z.number().int().optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        ensureAdmin(ctx.user);
+
+        const nextLimit =
+          input.monthlyLimit !== undefined
+            ? input.monthlyLimit
+            : input.plan === "premium"
+              ? -1
+              : 3;
+
+        if (nextLimit === 0 || nextLimit < -1) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "monthlyLimit must be -1 or a positive integer",
+          });
+        }
+
+        const subscription = await db.setUserSubscriptionPlan(input.userId, input.plan, nextLimit);
+        return {
+          userId: subscription.userId,
+          plan: subscription.plan,
+          monthlyLimit: subscription.monthlyLimit,
+          analysesThisMonth: subscription.analysesThisMonth,
+          lastResetDate: subscription.lastResetDate,
+        };
+      }),
+
+    verifyAppleReceipt: protectedProcedure
+      .input(
+        z.object({
+          receiptData: z.string().min(10),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        const verification = await verifyAppleSubscriptionReceipt(input.receiptData);
+
+        if (!verification.active) {
+          const subscription = await db.getOrCreateUserSubscription(ctx.user.id);
+          return {
+            active: false as const,
+            planUpdated: false as const,
+            plan: subscription.plan,
+          };
+        }
+
+        const subscription = await db.setUserSubscriptionPlan(ctx.user.id, "premium", -1);
+        return {
+          active: true as const,
+          planUpdated: true as const,
+          plan: subscription.plan,
+        };
+      }),
+
+    subscriptionStatus: protectedProcedure.query(async ({ ctx }) => {
+      const subscription = await db.getUserSubscription(ctx.user.id);
+      if (!subscription) {
+        return {
+          plan: "free" as const,
+          analysesThisMonth: 0,
+          monthlyLimit: 3,
+          remaining: 3,
+        };
+      }
+
+      const unlimited = subscription.monthlyLimit < 0 || subscription.plan === "premium";
+      return {
+        plan: subscription.plan,
+        analysesThisMonth: subscription.analysesThisMonth,
+        monthlyLimit: subscription.monthlyLimit,
+        remaining: unlimited ? -1 : Math.max(0, subscription.monthlyLimit - subscription.analysesThisMonth),
+      };
+    }),
+
+    cancelJob: protectedProcedure
+      .input(z.object({ jobId: z.string().min(1) }))
+      .mutation(({ input, ctx }) => {
+        const job = cancelAnalysisJob(input.jobId, ctx.user.id);
+        if (!job) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+        }
+        return job;
+      }),
+
     // Upload and analyze a contract (text)
-    analyzeText: publicProcedure
+    analyzeText: protectedProcedure
       .input(
         z.object({
           name: z.string().min(1).max(255),
@@ -35,6 +219,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const startTime = Date.now();
         const mode = input.mode || "quick";
+        await ensureModeAllowed(ctx.user.id, mode);
         
         // Rate limiting (10 requests per 15 minutes per IP)
         const clientIp = ctx.req.ip || ctx.req.socket.remoteAddress || "unknown";
@@ -56,7 +241,7 @@ export const appRouter = router({
         // Check for cached analysis
         const contentHash = computeContentHash(input.text);
         console.log(`[Cache Test] contentHash: ${contentHash}, mode: ${mode}`);
-        const cached = await db.findCachedAnalysis(contentHash, mode);
+        const cached = await db.findUserCachedAnalysis(ctx.user.id, contentHash, mode);
         console.log(`[Cache Test] db.findCachedAnalysis result: ${cached ? 'HIT' : 'MISS'}`);
         
         if (cached) {
@@ -68,82 +253,106 @@ export const appRouter = router({
           };
         }
 
-        // Create contract record (no user ID)
-        const contractId = await db.createContract({
-          userId: null, // No user authentication in MVP
-          name: input.name,
-          contentType: "text",
-          originalText: input.text,
-        });
-
-        // Analyze the contract
-        console.log(`[Cache Test] Cache miss - calling AI model`);
-        const analysis = await analyzeContract(input.text, mode);
-
-        // Calculate processing time with defensive checks
-        const endTime = Date.now();
-        let processingTimeMs = endTime - startTime;
-        
-        // Defensive check: ensure processingTimeMs is always a valid integer
-        if (!Number.isFinite(processingTimeMs) || isNaN(processingTimeMs) || processingTimeMs < 0) {
-          console.warn('[Analysis] Invalid processingTimeMs:', processingTimeMs, 'startTime:', startTime, 'endTime:', endTime);
-          processingTimeMs = 0;
-        }
-        processingTimeMs = Math.floor(processingTimeMs); // Ensure integer
-
-        console.log('[Analysis] Processing time:', processingTimeMs, 'ms');
-
-        // Log payload before DB insert
-        console.log('[DB INSERT PAYLOAD]', JSON.stringify({ 
-          contractId, 
-          userId: null, 
-          processingTimeMs, 
-          processingTimeType: typeof processingTimeMs,
-          isNaN: isNaN(processingTimeMs),
-          isFinite: Number.isFinite(processingTimeMs),
-          summaryLen: analysis.summary?.length 
-        }));
-
-        // Generate delete token for secure deletion
-        const deleteToken = computeContentHash(`${contractId}-${Date.now()}-${Math.random()}`);
-
-        // Save analysis
-        let analysisId: number;
-        try {
-          analysisId = await db.createAnalysis({
-            contractId,
-            userId: null, // No user authentication in MVP
-            summary: analysis.summary,
-            mainObligations: JSON.stringify(analysis.mainObligations),
-            potentialRisks: JSON.stringify(analysis.potentialRisks),
-            redFlags: JSON.stringify(analysis.redFlags),
-            mode,
-            contentHash,
-            deleteToken,
-            processingTimeMs,
+        const quota = await db.consumeAnalysisQuota(ctx.user.id);
+        if (!quota.allowed) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `Monthly analysis limit reached (${quota.analysesThisMonth}/${quota.monthlyLimit}). Upgrade to premium for more analyses.`,
           });
-          console.log('[analyzeText] Analysis saved successfully with ID:', analysisId);
+        }
+        let contractId: number | null = null;
+        let quotaConsumed = true;
+        try {
+          // Create contract record (no user ID)
+          contractId = await db.createContract({
+            userId: ctx.user.id,
+            name: input.name,
+            contentType: "text",
+            originalText: input.text,
+          });
+
+          // Analyze the contract
+          console.log(`[Cache Test] Cache miss - calling AI model`);
+          const analysis = await analyzeContract(input.text, mode);
+
+          // Calculate processing time with defensive checks
+          const endTime = Date.now();
+          let processingTimeMs = endTime - startTime;
+          
+          // Defensive check: ensure processingTimeMs is always a valid integer
+          if (!Number.isFinite(processingTimeMs) || isNaN(processingTimeMs) || processingTimeMs < 0) {
+            console.warn('[Analysis] Invalid processingTimeMs:', processingTimeMs, 'startTime:', startTime, 'endTime:', endTime);
+            processingTimeMs = 0;
+          }
+          processingTimeMs = Math.floor(processingTimeMs); // Ensure integer
+
+          console.log('[Analysis] Processing time:', processingTimeMs, 'ms');
+
+          // Log payload before DB insert
+          console.log('[DB INSERT PAYLOAD]', JSON.stringify({ 
+            contractId, 
+            userId: ctx.user.id,
+            processingTimeMs, 
+            processingTimeType: typeof processingTimeMs,
+            isNaN: isNaN(processingTimeMs),
+            isFinite: Number.isFinite(processingTimeMs),
+            summaryLen: analysis.summary?.length 
+          }));
+
+          // Generate delete token for secure deletion
+          const deleteToken = computeContentHash(`${contractId}-${Date.now()}-${Math.random()}`);
+
+          // Save analysis
+          let analysisId: number;
+          try {
+            analysisId = await db.createAnalysis({
+              contractId,
+              userId: ctx.user.id,
+              summary: analysis.summary,
+              mainObligations: JSON.stringify(analysis.mainObligations),
+              potentialRisks: JSON.stringify(analysis.potentialRisks),
+              redFlags: JSON.stringify(analysis.redFlags),
+              mode,
+              contentHash,
+              deleteToken,
+              processingTimeMs,
+            });
+            console.log('[analyzeText] Analysis saved successfully with ID:', analysisId);
+          } catch (error) {
+            console.error('[analyzeText] FAILED to save analysis:', error);
+            throw new Error(`Failed to save analysis: ${error instanceof Error ? error.message : String(error)}`);
+          }
+          
+          const result = {
+            contractId,
+            analysisId,
+            deleteToken,
+          };
+          
+          // Save idempotency result
+          if (idempotencyKey) {
+            saveIdempotency(idempotencyKey, result);
+          }
+
+          quotaConsumed = false;
+          return result;
         } catch (error) {
-          console.error('[analyzeText] FAILED to save analysis:', error);
-          throw new Error(`Failed to save analysis: ${error instanceof Error ? error.message : String(error)}`);
+          if (contractId) {
+            await db.deleteContract(contractId).catch((cleanupError) => {
+              console.error('[analyzeText] Failed to cleanup contract after error:', cleanupError);
+            });
+          }
+          if (quotaConsumed) {
+            await db.releaseAnalysisQuota(ctx.user.id).catch((quotaError) => {
+              console.error('[analyzeText] Failed to rollback quota:', quotaError);
+            });
+          }
+          throw error;
         }
-        
-        const result = {
-          contractId,
-          analysisId,
-          deleteToken,
-        };
-        
-        // Save idempotency result
-        if (idempotencyKey) {
-          saveIdempotency(idempotencyKey, result);
-        }
-        
-        return result;
       }),
 
     // Upload and analyze a contract (PDF)
-    analyzePDF: publicProcedure
+    analyzePDF: protectedProcedure
       .input(
         z.object({
           name: z.string().min(1).max(255),
@@ -152,9 +361,10 @@ export const appRouter = router({
           mode: z.enum(["quick", "deep"]).optional().default("quick"),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const startTime = Date.now();
         const mode = input.mode || "quick";
+        await ensureModeAllowed(ctx.user.id, mode);
 
         // Check file size (10MB limit)
         if (input.fileSize > 10 * 1024 * 1024) {
@@ -173,7 +383,7 @@ export const appRouter = router({
         
         // Check for cached analysis
         const contentHash = computeContentHash(text);
-        const cached = await db.findCachedAnalysis(contentHash, mode);
+        const cached = await db.findUserCachedAnalysis(ctx.user.id, contentHash, mode);
         
         if (cached) {
           console.log(`[Analysis] Cache hit for hash ${contentHash}`);
@@ -184,81 +394,105 @@ export const appRouter = router({
           };
         }
 
-        // Upload PDF to storage
-        const fileKey = `contracts/anonymous/${Date.now()}-${input.name}`;
-        const { url: fileUrl } = await storagePut(fileKey, pdfBuffer, "application/pdf");
-
-        // Create contract record (no user ID)
-        const contractId = await db.createContract({
-          userId: null, // No user authentication in MVP
-          name: input.name,
-          contentType: "pdf",
-          originalText: text,
-          fileUrl,
-          fileSize: input.fileSize,
-        });
-
-        // Analyze the contract
-        const analysis = await analyzeContract(text, mode);
-
-        // Calculate processing time with defensive checks
-        const endTime = Date.now();
-        let processingTimeMs = endTime - startTime;
-        
-        // Defensive check: ensure processingTimeMs is always a valid integer
-        if (!Number.isFinite(processingTimeMs) || isNaN(processingTimeMs) || processingTimeMs < 0) {
-          console.warn('[Analysis] Invalid processingTimeMs:', processingTimeMs, 'startTime:', startTime, 'endTime:', endTime);
-          processingTimeMs = 0;
-        }
-        processingTimeMs = Math.floor(processingTimeMs); // Ensure integer
-
-        console.log('[Analysis] Processing time:', processingTimeMs, 'ms');
-
-        // Log payload before DB insert
-        console.log('[DB INSERT PAYLOAD]', JSON.stringify({ 
-          contractId, 
-          userId: null, 
-          processingTimeMs, 
-          processingTimeType: typeof processingTimeMs,
-          isNaN: isNaN(processingTimeMs),
-          isFinite: Number.isFinite(processingTimeMs),
-          summaryLen: analysis.summary?.length 
-        }));
-
-        // Generate delete token for secure deletion
-        const deleteToken = computeContentHash(`${contractId}-${Date.now()}-${Math.random()}`);
-
-        // Save analysis
-        let analysisId: number;
-        try {
-          analysisId = await db.createAnalysis({
-            contractId,
-            userId: null, // No user authentication in MVP
-            summary: analysis.summary,
-            mainObligations: JSON.stringify(analysis.mainObligations),
-            potentialRisks: JSON.stringify(analysis.potentialRisks),
-            redFlags: JSON.stringify(analysis.redFlags),
-            mode,
-            contentHash,
-            deleteToken,
-            processingTimeMs,
+        const quota = await db.consumeAnalysisQuota(ctx.user.id);
+        if (!quota.allowed) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `Monthly analysis limit reached (${quota.analysesThisMonth}/${quota.monthlyLimit}). Upgrade to premium for more analyses.`,
           });
-          console.log('[analyzeText] Analysis saved successfully with ID:', analysisId);
-        } catch (error) {
-          console.error('[analyzeText] FAILED to save analysis:', error);
-          throw new Error(`Failed to save analysis: ${error instanceof Error ? error.message : String(error)}`);
         }
+        let contractId: number | null = null;
+        let quotaConsumed = true;
+        try {
+          // Upload PDF to storage
+          const fileKey = `contracts/${ctx.user.id}/${Date.now()}-${input.name}`;
+          const { url: fileUrl } = await storagePut(fileKey, pdfBuffer, "application/pdf");
 
-        return {
-          contractId,
-          analysisId,
-          analysis,
-        };
+          // Create contract record (no user ID)
+          contractId = await db.createContract({
+            userId: ctx.user.id,
+            name: input.name,
+            contentType: "pdf",
+            originalText: text,
+            fileUrl,
+            fileSize: input.fileSize,
+          });
+
+          // Analyze the contract
+          const analysis = await analyzeContract(text, mode);
+
+          // Calculate processing time with defensive checks
+          const endTime = Date.now();
+          let processingTimeMs = endTime - startTime;
+          
+          // Defensive check: ensure processingTimeMs is always a valid integer
+          if (!Number.isFinite(processingTimeMs) || isNaN(processingTimeMs) || processingTimeMs < 0) {
+            console.warn('[Analysis] Invalid processingTimeMs:', processingTimeMs, 'startTime:', startTime, 'endTime:', endTime);
+            processingTimeMs = 0;
+          }
+          processingTimeMs = Math.floor(processingTimeMs); // Ensure integer
+
+          console.log('[Analysis] Processing time:', processingTimeMs, 'ms');
+
+          // Log payload before DB insert
+          console.log('[DB INSERT PAYLOAD]', JSON.stringify({ 
+            contractId, 
+            userId: ctx.user.id, 
+            processingTimeMs, 
+            processingTimeType: typeof processingTimeMs,
+            isNaN: isNaN(processingTimeMs),
+            isFinite: Number.isFinite(processingTimeMs),
+            summaryLen: analysis.summary?.length 
+          }));
+
+          // Generate delete token for secure deletion
+          const deleteToken = computeContentHash(`${contractId}-${Date.now()}-${Math.random()}`);
+
+          // Save analysis
+          let analysisId: number;
+          try {
+            analysisId = await db.createAnalysis({
+              contractId,
+              userId: ctx.user.id,
+              summary: analysis.summary,
+              mainObligations: JSON.stringify(analysis.mainObligations),
+              potentialRisks: JSON.stringify(analysis.potentialRisks),
+              redFlags: JSON.stringify(analysis.redFlags),
+              mode,
+              contentHash,
+              deleteToken,
+              processingTimeMs,
+            });
+            console.log('[analyzeText] Analysis saved successfully with ID:', analysisId);
+          } catch (error) {
+            console.error('[analyzeText] FAILED to save analysis:', error);
+            throw new Error(`Failed to save analysis: ${error instanceof Error ? error.message : String(error)}`);
+          }
+
+          quotaConsumed = false;
+          return {
+            contractId,
+            analysisId,
+            analysis,
+          };
+        } catch (error) {
+          if (contractId) {
+            await db.deleteContract(contractId).catch((cleanupError) => {
+              console.error('[analyzePDF] Failed to cleanup contract after error:', cleanupError);
+            });
+          }
+          if (quotaConsumed) {
+            await db.releaseAnalysisQuota(ctx.user.id).catch((quotaError) => {
+              console.error('[analyzePDF] Failed to rollback quota:', quotaError);
+            });
+          }
+          throw error;
+        }
       }),
 
     // Get all analyses (no user filter)
-    list: publicProcedure.query(async () => {
-      const analyses = await db.getAllAnalyses();
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const analyses = await db.getUserAnalyses(ctx.user.id);
       const results = [];
       for (const analysis of analyses) {
         const contract = await db.getContractById(analysis.contractId);
@@ -281,12 +515,15 @@ export const appRouter = router({
     }),
 
     // Delete a specific report by deleteToken
-    deleteReport: publicProcedure
+    deleteReport: protectedProcedure
       .input(z.object({ deleteToken: z.string().min(1) }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const analysis = await db.getAnalysisByDeleteToken(input.deleteToken);
         if (!analysis) {
-          throw new Error("Report not found or already deleted");
+          throw new TRPCError({ code: "NOT_FOUND", message: "Report not found or already deleted" });
+        }
+        if (analysis.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Forbidden" });
         }
         await db.deleteAnalysis(analysis.id);
         await db.deleteContract(analysis.contractId);
@@ -490,13 +727,53 @@ export const appRouter = router({
       };
     }),
 
-    // Get a specific analysis
-    getAnalysis: publicProcedure
-      .input(z.object({ analysisId: z.number() }))
-      .query(async ({ input }) => {
+
+
+    analysisQuality: protectedProcedure
+      .input(z.object({ analysisId: z.number().int().positive() }))
+      .query(async ({ input, ctx }) => {
         const analysis = await db.getAnalysisById(input.analysisId);
         if (!analysis) {
-          throw new Error("Analysis not found");
+          throw new TRPCError({ code: "NOT_FOUND", message: "Analysis not found" });
+        }
+        if (analysis.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Forbidden" });
+        }
+
+        const report = evaluateAnalysisQuality({
+          summary: analysis.summary,
+          mainObligations: JSON.parse(analysis.mainObligations),
+          potentialRisks: JSON.parse(analysis.potentialRisks),
+          redFlags: JSON.parse(analysis.redFlags),
+          mode: analysis.mode as "quick" | "deep",
+        });
+
+        const subscription = await db.getOrCreateUserSubscription(ctx.user.id);
+        if (subscription.plan !== "premium") {
+          return {
+            score: report.score,
+            premiumUnlocked: false,
+            message: "Upgrade to premium for detailed quality coaching.",
+          };
+        }
+
+        return {
+          score: report.score,
+          premiumUnlocked: true,
+          checks: report.checks,
+          suggestions: report.suggestions,
+        };
+      }),
+    // Get a specific analysis
+    getAnalysis: protectedProcedure
+      .input(z.object({ analysisId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const analysis = await db.getAnalysisById(input.analysisId);
+        if (!analysis) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Analysis not found" });
+        }
+        if (analysis.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Forbidden" });
         }
 
         const contract = await db.getContractById(analysis.contractId);
@@ -513,17 +790,28 @@ export const appRouter = router({
       }),
 
     // Delete a contract and its analysis
-    delete: publicProcedure
+    delete: protectedProcedure
       .input(z.object({ contractId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const contract = await db.getContractById(input.contractId);
         if (!contract) {
-          throw new Error("Contract not found");
+          throw new TRPCError({ code: "NOT_FOUND", message: "Contract not found" });
+        }
+        if (contract.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Forbidden" });
         }
 
         await db.deleteContract(input.contractId);
         return { success: true };
       }),
+
+    deleteMyData: protectedProcedure.mutation(async ({ ctx }) => {
+      const result = await db.deleteUserData(ctx.user.id);
+      return {
+        success: true,
+        ...result,
+      };
+    }),
   }),
 });
 

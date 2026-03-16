@@ -1,0 +1,40 @@
+name: App Store Readiness (Strict)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  strict-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PRIVACY_POLICY_URL: ${{ vars.PRIVACY_POLICY_URL }}
+      TERMS_OF_USE_URL: ${{ vars.TERMS_OF_USE_URL }}
+      IOS_BUILD_NUMBER: ${{ vars.IOS_BUILD_NUMBER }}
+      ANDROID_VERSION_CODE: ${{ vars.ANDROID_VERSION_CODE }}
+      IOS_SUBSCRIPTION_PRODUCT_ID: ${{ vars.IOS_SUBSCRIPTION_PRODUCT_ID }}
+      ANDROID_SUBSCRIPTION_PRODUCT_ID: ${{ vars.ANDROID_SUBSCRIPTION_PRODUCT_ID }}
+      EAS_APPLE_ID: ${{ vars.EAS_APPLE_ID }}
+      APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
+      APPLE_SHARED_SECRET: ${{ secrets.APPLE_SHARED_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Strict App Store readiness check
+        run: pnpm -s appstore:check -- --strict
