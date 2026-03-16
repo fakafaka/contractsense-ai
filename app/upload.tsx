@@ -1,6 +1,6 @@
 import { ScrollView, Text, View, TouchableOpacity, TextInput, ActivityIndicator, Alert } from "react-native";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { trpc } from "@/lib/trpc";
@@ -17,8 +17,35 @@ export default function UploadScreen() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisMode, setAnalysisMode] = useState<"quick" | "deep">("quick");
 
-  const analyzeTextMutation = trpc.contracts.analyzeText.useMutation();
-  const analyzePDFMutation = trpc.contracts.analyzePDF.useMutation();
+  const enqueueTextMutation = trpc.contracts.enqueueTextAsync.useMutation();
+  const enqueuePDFMutation = trpc.contracts.enqueuePDFAsync.useMutation();
+  const cancelJobMutation = trpc.contracts.cancelJob.useMutation();
+  const trpcUtils = trpc.useUtils();
+  const activeJobIdRef = useRef<string | null>(null);
+  const { data: subscription } = trpc.contracts.subscriptionStatus.useQuery();
+
+  const waitForJobCompletion = async (jobId: string) => {
+    activeJobIdRef.current = jobId;
+    const maxAttempts = 180; // ~6 minutes @ 2s
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const status = await trpcUtils.contracts.getJobStatus.fetch({ jobId });
+      if (status.status === "completed" && status.analysisId) {
+        activeJobIdRef.current = null;
+        return status.analysisId;
+      }
+      if (status.status === "cancelled") {
+        activeJobIdRef.current = null;
+        throw new Error("Analysis was cancelled");
+      }
+      if (status.status === "failed") {
+        activeJobIdRef.current = null;
+        throw new Error(status.error || "Analysis job failed");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    activeJobIdRef.current = null;
+    throw new Error("Analysis timed out. Please try again.");
+  };
 
   const handlePickPDF = async () => {
     try {
@@ -74,47 +101,61 @@ export default function UploadScreen() {
       return;
     }
 
+    if (analysisMode === "deep" && subscription?.plan !== "premium") {
+      Alert.alert("Premium Feature", "Deep analysis is available on Premium plan.");
+      return;
+    }
+
     setIsAnalyzing(true);
 
     try {
       if (uploadMethod === "text") {
-        const result = await analyzeTextMutation.mutateAsync({
+        const job = await enqueueTextMutation.mutateAsync({
           mode: analysisMode,
           name: contractName.trim(),
           text: contractText.trim(),
         });
-        
-        // Validate analysisId before navigation
-        if (!result.analysisId) {
-          throw new Error("Analysis completed but no ID was returned");
-        }
+        const analysisId = await waitForJobCompletion(job.jobId);
         
         // Navigate to analysis screen
-        router.replace(`/analysis/${result.analysisId}` as any);
+        router.replace(`/analysis/${analysisId}` as any);
       } else if (uploadMethod === "pdf" && pdfFile) {
         // Read PDF file as base64
         const pdfBase64 = await FileSystem.readAsStringAsync(pdfFile.uri, {
           encoding: FileSystem.EncodingType.Base64,
         });
 
-        const result = await analyzePDFMutation.mutateAsync({
+        const job = await enqueuePDFMutation.mutateAsync({
           mode: analysisMode,
           name: contractName.trim(),
           pdfBase64: pdfBase64,
           fileSize: pdfFile.size,
         });
-
-        // Validate analysisId before navigation
-        if (!result.analysisId) {
-          throw new Error("Analysis completed but no ID was returned");
-        }
+        const analysisId = await waitForJobCompletion(job.jobId);
 
         // Navigate to analysis screen
-        router.replace(`/analysis/${result.analysisId}` as any);
+        router.replace(`/analysis/${analysisId}` as any);
       }
     } catch (error: any) {
+      activeJobIdRef.current = null;
       console.error("Analysis error:", error);
       Alert.alert("Analysis Failed", error.message || "Failed to analyze contract. Please try again.");
+      setIsAnalyzing(false);
+    }
+  };
+
+
+
+  const handleCancelAnalysis = async () => {
+    const jobId = activeJobIdRef.current;
+    try {
+      if (jobId) {
+        await cancelJobMutation.mutateAsync({ jobId });
+      }
+    } catch (error) {
+      console.warn("Cancel job failed:", error);
+    } finally {
+      activeJobIdRef.current = null;
       setIsAnalyzing(false);
     }
   };
@@ -133,6 +174,14 @@ export default function UploadScreen() {
             Our AI is reading your contract and identifying key terms, obligations, risks, and red flags.
           </Text>
         </View>
+        <TouchableOpacity
+          className="mt-6 px-5 py-3 rounded-full border border-border"
+          style={{ opacity: cancelJobMutation.isPending ? 0.6 : 1 }}
+          disabled={cancelJobMutation.isPending}
+          onPress={handleCancelAnalysis}
+        >
+          <Text className="text-foreground font-semibold">Cancel</Text>
+        </TouchableOpacity>
       </ScreenContainer>
     );
   }
@@ -282,6 +331,14 @@ export default function UploadScreen() {
           {uploadMethod && (
             <View className="gap-3">
               <Text className="text-base font-semibold text-foreground">Analysis Mode</Text>
+              {subscription && (
+                <Text className="text-xs text-muted">
+                  Plan: {subscription.plan === "premium" ? "Premium" : "Free"} ·
+                  {subscription.remaining === -1
+                    ? " Unlimited analyses"
+                    : ` ${subscription.remaining} analyses left this month`}
+                </Text>
+              )}
               <View className="flex-row gap-3">
                 <TouchableOpacity
                   className={`flex-1 p-4 rounded-xl border-2 ${analysisMode === "quick" ? "border-primary bg-primary/10" : "border-border bg-surface"}`}
@@ -297,8 +354,14 @@ export default function UploadScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   className={`flex-1 p-4 rounded-xl border-2 ${analysisMode === "deep" ? "border-primary bg-primary/10" : "border-border bg-surface"}`}
-                  style={{ opacity: 1 }}
-                  onPress={() => setAnalysisMode("deep")}
+                  style={{ opacity: subscription?.plan !== "premium" ? 0.5 : 1 }}
+                  onPress={() => {
+                    if (subscription?.plan !== "premium") {
+                      Alert.alert("Premium Feature", "Deep analysis requires Premium plan.");
+                      return;
+                    }
+                    setAnalysisMode("deep");
+                  }}
                 >
                   <Text className={`text-base font-semibold text-center ${analysisMode === "deep" ? "text-primary" : "text-foreground"}`}>
                     Deep

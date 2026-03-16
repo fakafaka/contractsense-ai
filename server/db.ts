@@ -1,4 +1,4 @@
-import { eq, desc, lt } from "drizzle-orm";
+import { and, eq, desc, inArray, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, 
@@ -162,7 +162,7 @@ export async function createAnalysis(data: InsertAnalysis): Promise<number> {
   }
   data.contractId = cid;
 
-  // Log the exact data being inserted
+  // Keep logs privacy-safe: only metadata, no analysis content.
   console.log('[createAnalysis data]', JSON.stringify({
     contractId: data.contractId,
     userId: data.userId,
@@ -171,7 +171,6 @@ export async function createAnalysis(data: InsertAnalysis): Promise<number> {
     isNaN: isNaN(data.processingTimeMs as any),
     isFinite: Number.isFinite(data.processingTimeMs),
     summaryLen: data.summary?.length,
-    fullData: data
   }, null, 2));
   
   const result = await db.insert(analyses).values(data) as any;
@@ -226,6 +225,38 @@ export async function deleteAnalysis(analysisId: number): Promise<void> {
   await db.delete(analyses).where(eq(analyses.id, analysisId));
 }
 
+export async function deleteUserData(userId: number): Promise<{ analysesDeleted: number; contractsDeleted: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Collect user-owned contracts first so we can also remove legacy analyses rows
+  // that may not have userId populated but still belong to user's contracts.
+  const ownedContracts = await db
+    .select({ id: contracts.id })
+    .from(contracts)
+    .where(eq(contracts.userId, userId));
+  const contractIds = ownedContracts.map((c) => c.id);
+
+  let analysesDeleted = 0;
+  if (contractIds.length > 0) {
+    const analysesByContract = (await db
+      .delete(analyses)
+      .where(inArray(analyses.contractId, contractIds))) as any;
+    analysesDeleted += analysesByContract?.affectedRows || 0;
+  }
+
+  // Keep userId-based deletion as a fallback for rows without valid contract linkage.
+  const analysesByUser = (await db.delete(analyses).where(eq(analyses.userId, userId))) as any;
+  analysesDeleted += analysesByUser?.affectedRows || 0;
+
+  const contractsResult = (await db.delete(contracts).where(eq(contracts.userId, userId))) as any;
+
+  return {
+    analysesDeleted,
+    contractsDeleted: contractsResult?.affectedRows || 0,
+  };
+}
+
 /**
  * Find cached analysis by content hash and mode
  */
@@ -236,10 +267,34 @@ export async function findCachedAnalysis(contentHash: string, mode: string): Pro
   const result = await db
     .select()
     .from(analyses)
-    .where(eq(analyses.contentHash, contentHash))
+    .where(and(eq(analyses.contentHash, contentHash), eq(analyses.mode, mode as any)))
     .orderBy(desc(analyses.createdAt))
     .limit(1);
   
+  return result[0] || null;
+}
+
+export async function findUserCachedAnalysis(
+  userId: number,
+  contentHash: string,
+  mode: string,
+): Promise<Analysis | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db
+    .select()
+    .from(analyses)
+    .where(
+      and(
+        eq(analyses.userId, userId),
+        eq(analyses.contentHash, contentHash),
+        eq(analyses.mode, mode as any),
+      ),
+    )
+    .orderBy(desc(analyses.createdAt))
+    .limit(1);
+
   return result[0] || null;
 }
 
@@ -274,6 +329,72 @@ export async function getUserSubscription(userId: number): Promise<UserSubscript
   return result[0] || null;
 }
 
+export async function getOrCreateUserSubscription(userId: number): Promise<UserSubscription> {
+  let subscription = await getUserSubscription(userId);
+  if (subscription) {
+    return subscription;
+  }
+
+  await createUserSubscription({
+    userId,
+    plan: "free",
+    analysesThisMonth: 0,
+    monthlyLimit: 3,
+    lastResetDate: new Date(),
+  });
+
+  subscription = await getUserSubscription(userId);
+  if (!subscription) {
+    throw new Error("Failed to initialize user subscription");
+  }
+  return subscription;
+}
+
+
+export async function setUserSubscriptionPlan(
+  userId: number,
+  plan: "free" | "premium",
+  monthlyLimit?: number,
+): Promise<UserSubscription> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const normalizedLimit =
+    monthlyLimit !== undefined ? monthlyLimit : plan === "premium" ? -1 : 3;
+
+  if (normalizedLimit === 0 || normalizedLimit < -1) {
+    throw new Error("monthlyLimit must be -1 or a positive integer");
+  }
+
+  const existing = await getUserSubscription(userId);
+  const now = new Date();
+
+  if (existing) {
+    await db
+      .update(userSubscriptions)
+      .set({
+        plan,
+        monthlyLimit: normalizedLimit,
+        lastResetDate: now,
+      })
+      .where(eq(userSubscriptions.userId, userId));
+  } else {
+    await createUserSubscription({
+      userId,
+      plan,
+      analysesThisMonth: 0,
+      monthlyLimit: normalizedLimit,
+      lastResetDate: now,
+    });
+  }
+
+  const subscription = await getUserSubscription(userId);
+  if (!subscription) {
+    throw new Error("Failed to set subscription plan");
+  }
+
+  return subscription;
+}
 export async function createUserSubscription(data: InsertUserSubscription): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -282,77 +403,74 @@ export async function createUserSubscription(data: InsertUserSubscription): Prom
   return Number(result.insertId);
 }
 
-export async function incrementAnalysisCount(userId: number): Promise<void> {
+export type AnalysisQuotaResult = {
+  allowed: boolean;
+  remaining: number;
+  plan: "free" | "premium";
+  monthlyLimit: number;
+  analysesThisMonth: number;
+};
+
+export async function consumeAnalysisQuota(userId: number): Promise<AnalysisQuotaResult> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
-  // Get current subscription
-  const subscription = await getUserSubscription(userId);
-  
-  if (!subscription) {
-    // Create new subscription if doesn't exist
-    await createUserSubscription({
-      userId,
-      plan: "free",
-      analysesThisMonth: 1,
-      monthlyLimit: 3,
-      lastResetDate: new Date(),
-    });
-    return;
-  }
-  
-  // Check if we need to reset the counter (new month)
+
   const now = new Date();
+  const subscription = await getOrCreateUserSubscription(userId);
+
   const lastReset = new Date(subscription.lastResetDate);
   const isNewMonth = now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear();
-  
+
   if (isNewMonth) {
-    // Reset counter for new month
-    await db.update(userSubscriptions)
-      .set({ 
-        analysesThisMonth: 1, 
-        lastResetDate: now 
-      })
-      .where(eq(userSubscriptions.userId, userId));
-  } else {
-    // Increment counter
-    await db.update(userSubscriptions)
-      .set({ 
-        analysesThisMonth: subscription.analysesThisMonth + 1 
-      })
+    subscription.analysesThisMonth = 0;
+    subscription.lastResetDate = now;
+    await db
+      .update(userSubscriptions)
+      .set({ analysesThisMonth: 0, lastResetDate: now })
       .where(eq(userSubscriptions.userId, userId));
   }
+
+  const unlimited = subscription.monthlyLimit < 0 || subscription.plan === "premium";
+  if (!unlimited && subscription.analysesThisMonth >= subscription.monthlyLimit) {
+    return {
+      allowed: false,
+      remaining: 0,
+      plan: subscription.plan,
+      monthlyLimit: subscription.monthlyLimit,
+      analysesThisMonth: subscription.analysesThisMonth,
+    };
+  }
+
+  const nextCount = subscription.analysesThisMonth + 1;
+  await db
+    .update(userSubscriptions)
+    .set({ analysesThisMonth: nextCount })
+    .where(eq(userSubscriptions.userId, userId));
+
+  const remaining = unlimited ? -1 : Math.max(0, subscription.monthlyLimit - nextCount);
+  return {
+    allowed: true,
+    remaining,
+    plan: subscription.plan,
+    monthlyLimit: subscription.monthlyLimit,
+    analysesThisMonth: nextCount,
+  };
 }
 
-export async function canUserAnalyze(userId: number): Promise<{ canAnalyze: boolean; remaining: number; limit: number }> {
+export async function releaseAnalysisQuota(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const subscription = await getUserSubscription(userId);
-  
-  if (!subscription) {
-    // New user, can analyze
-    return { canAnalyze: true, remaining: 3, limit: 3 };
-  }
-  
-  // Check if we need to reset the counter (new month)
-  const now = new Date();
-  const lastReset = new Date(subscription.lastResetDate);
-  const isNewMonth = now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear();
-  
-  if (isNewMonth) {
-    // New month, reset counter
-    return { canAnalyze: true, remaining: subscription.monthlyLimit, limit: subscription.monthlyLimit };
-  }
-  
-  // Premium users have unlimited analyses
-  if (subscription.plan === "premium" || subscription.monthlyLimit === -1) {
-    return { canAnalyze: true, remaining: -1, limit: -1 };
-  }
-  
-  const remaining = subscription.monthlyLimit - subscription.analysesThisMonth;
-  return { 
-    canAnalyze: remaining > 0, 
-    remaining: Math.max(0, remaining), 
-    limit: subscription.monthlyLimit 
-  };
+  if (!subscription) return;
+
+  const nextCount = Math.max(0, subscription.analysesThisMonth - 1);
+  if (nextCount === subscription.analysesThisMonth) return;
+
+  await db
+    .update(userSubscriptions)
+    .set({ analysesThisMonth: nextCount })
+    .where(eq(userSubscriptions.userId, userId));
 }
 
 // ============================================

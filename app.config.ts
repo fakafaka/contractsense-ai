@@ -36,6 +36,10 @@ const env = {
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
+  iosBuildNumber: process.env.IOS_BUILD_NUMBER || "1",
+  androidVersionCode: Number(process.env.ANDROID_VERSION_CODE || 1),
+  privacyPolicyUrl: process.env.PRIVACY_POLICY_URL || "",
+  termsOfUseUrl: process.env.TERMS_OF_USE_URL || "",
 };
 
 const config: ExpoConfig = {
@@ -50,6 +54,7 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
+    buildNumber: env.iosBuildNumber,
     "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -64,6 +69,7 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
+    versionCode: env.androidVersionCode,
     permissions: ["POST_NOTIFICATIONS"],
     intentFilters: [
       {
@@ -121,6 +127,10 @@ const config: ExpoConfig = {
       },
     ],
   ],
+  extra: {
+    privacyPolicyUrl: env.privacyPolicyUrl,
+    termsOfUseUrl: env.termsOfUseUrl,
+  },
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
