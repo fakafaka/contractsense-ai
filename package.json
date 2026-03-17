@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "concurrently -k \"pnpm dev:server\" \"pnpm dev:metro\"",
     "dev:server": "cross-env NODE_ENV=development PORT=3000 HOST=0.0.0.0 tsx watch server/_core/index.ts",
-    "dev:metro": "cross-env EXPO_USE_METRO_WORKSPACE_ROOT=1 npx expo start --web --port ${EXPO_PORT:-8081}",
+    "dev:metro": "npx expo start --clear --port ${EXPO_PORT:-8081}",
+    "dev:web": "npx expo start --web --clear --port ${EXPO_PORT:-8081}",
+    "expo:go": "npx expo start --tunnel --clear --port ${EXPO_PORT:-8081}",
     "build": "esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc --noEmit",
@@ -16,7 +18,11 @@
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "qr": "node scripts/generate_qr.mjs"
+    "qr": "node scripts/generate_qr.mjs",
+    "eval:quality": "tsx scripts/run_quality_eval.ts",
+    "appstore:check": "node scripts/app_store_readiness_check.mjs",
+    "dev:metro:offline": "EXPO_OFFLINE=1 npx expo start --clear --port ${EXPO_PORT:-8081}",
+    "expo:go:offline": "EXPO_OFFLINE=1 npx expo start --tunnel --clear --port ${EXPO_PORT:-8081}"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

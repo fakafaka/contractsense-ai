@@ -137,6 +137,9 @@ class SDKServer {
 
   private getSessionSecret() {
     const secret = ENV.cookieSecret;
+    if (!secret || secret.length < 16) {
+      throw new Error("JWT_SECRET is not configured or too weak");
+    }
     return new TextEncoder().encode(secret);
   }
 
@@ -195,6 +198,11 @@ class SDKServer {
 
       if (!isNonEmptyString(openId) || !isNonEmptyString(appId) || !isNonEmptyString(name)) {
         console.warn("[Auth] Session payload missing required fields");
+        return null;
+      }
+
+      if (!ENV.appId || appId !== ENV.appId) {
+        console.warn("[Auth] Session payload appId mismatch");
         return null;
       }
 
