@@ -22,7 +22,9 @@
     "eval:quality": "tsx scripts/run_quality_eval.ts",
     "appstore:check": "node scripts/app_store_readiness_check.mjs",
     "dev:metro:offline": "EXPO_OFFLINE=1 npx expo start --clear --port ${EXPO_PORT:-8081}",
-    "expo:go:offline": "EXPO_OFFLINE=1 npx expo start --tunnel --clear --port ${EXPO_PORT:-8081}"
+    "expo:go:offline": "EXPO_OFFLINE=1 npx expo start --tunnel --clear --port ${EXPO_PORT:-8081}",
+    "start:expo": "pnpm expo:go",
+    "start:expo:offline": "pnpm expo:go:offline"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

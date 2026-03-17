@@ -89,6 +89,10 @@ Notes:
 - `pnpm dev:metro:offline` skips remote version checks when network policy blocks Expo API calls.
 - `pnpm dev:web` is web-only preview and does not target Expo Go.
 
+Quick aliases:
+- `pnpm start:expo` -> `pnpm expo:go`
+- `pnpm start:expo:offline` -> `pnpm expo:go:offline`
+
 ### Versioning requirements
 
 App config uses:
