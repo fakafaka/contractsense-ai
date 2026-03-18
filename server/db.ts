@@ -14,6 +14,7 @@ import {
   type UserCredits,
   type InsertUserCredits,
   type IapPurchase,
+  type InsertIapPurchase,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -421,23 +422,17 @@ export async function releaseAnalysisCredit(userId: number): Promise<void> {
     .where(and(eq(userCredits.userId, userId), gt(userCredits.creditsConsumed, 0)));
 }
 
-export function addPaidCredits(userId: string, amount: number): Promise<void>;
-export function addPaidCredits(userId: number, amount: number): Promise<void>;
-export async function addPaidCredits(userId: string | number, amount: number): Promise<void> {
+export async function addPaidCredits(userId: number, creditsToAdd: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const normalizedUserId = Number(userId);
-  if (!Number.isFinite(normalizedUserId) || normalizedUserId <= 0) {
-    throw new Error("Invalid userId");
-  }
-  if (!Number.isFinite(amount) || amount <= 0) return;
+  if (!Number.isFinite(creditsToAdd) || creditsToAdd <= 0) return;
 
-  await getOrCreateUserCredits(normalizedUserId);
+  await getOrCreateUserCredits(userId);
 
   await db
     .update(userCredits)
-    .set({ paidCreditsGranted: sql`${userCredits.paidCreditsGranted} + ${Math.floor(amount)}` })
-    .where(eq(userCredits.userId, normalizedUserId));
+    .set({ paidCreditsGranted: sql`${userCredits.paidCreditsGranted} + ${Math.floor(creditsToAdd)}` })
+    .where(eq(userCredits.userId, userId));
 }
 
 export async function getIapPurchaseByTransactionId(transactionId: string): Promise<IapPurchase | null> {
@@ -452,41 +447,11 @@ export async function getIapPurchaseByTransactionId(transactionId: string): Prom
   return result[0] || null;
 }
 
-export function createIapPurchase(input: {
-  userId: string;
-  transactionId: string;
-  originalTransactionId?: string | null;
-  productId: string;
-  environment: string;
-  purchaseDateMs?: string | null;
-  rawPayload: string;
-}): Promise<number>;
-export function createIapPurchase(input: {
-  userId: number;
-  transactionId: string;
-  productId: string;
-}): Promise<number>;
-export async function createIapPurchase(input: {
-  userId: string | number;
-  transactionId: string;
-  originalTransactionId?: string | null;
-  productId: string;
-  environment?: string;
-  purchaseDateMs?: string | null;
-  rawPayload?: string;
-}): Promise<number> {
+export async function createIapPurchase(data: InsertIapPurchase): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const normalizedUserId = Number(input.userId);
-  if (!Number.isFinite(normalizedUserId) || normalizedUserId <= 0) {
-    throw new Error("Invalid userId");
-  }
 
-  const result = (await db.insert(iapPurchases).values({
-    userId: normalizedUserId,
-    transactionId: input.transactionId,
-    productId: input.productId,
-  })) as any;
+  const result = (await db.insert(iapPurchases).values(data)) as any;
   const id = Number((result as any)?.insertId ?? (result as any)?.[0]?.insertId ?? (result as any)?.lastInsertRowid);
   if (!Number.isFinite(id) || id <= 0) {
     throw new Error("createIapPurchase failed: missing insert id");
