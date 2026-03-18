@@ -15,7 +15,6 @@ type QueueJobInput = {
   text: string;
   mode: AnalysisMode;
   contentType: "text" | "pdf" | "images";
-  cacheIdentity?: string;
   fileUrl?: string;
   fileSize?: number;
 };
@@ -76,7 +75,7 @@ function makeJobId() {
 }
 
 function makeDedupeKey(userId: number, input: QueueJobInput) {
-  const cacheKey = buildAnalysisCacheKey(input.contentType, input.text, input.cacheIdentity || "");
+  const cacheKey = buildAnalysisCacheKey(input.contentType, input.text);
   return `${userId}:${cacheKey}`;
 }
 
@@ -114,7 +113,7 @@ async function processJob(job: QueueJob) {
     if (job.input.text.length > MAX_TEXT_CHARS) {
       throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `Contract text too large (max ${MAX_TEXT_CHARS} chars)` });
     }
-    const contentHash = buildAnalysisCacheKey(job.input.contentType, job.input.text, job.input.cacheIdentity || "");
+    const contentHash = buildAnalysisCacheKey(job.input.contentType, job.input.text);
     const scope = getAnalysisScopeMetadata(job.input.text);
 
     const cached = await db.findUserCachedAnalysis(job.userId, contentHash);

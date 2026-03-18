@@ -6,8 +6,6 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import {
-  capContractTextForV1,
-  computeContentHash,
   evaluateAnalysisQuality,
   extractTextFromImages,
   extractTextFromPDF,
@@ -26,8 +24,6 @@ function ensureAdmin(user: { role?: string }) {
 }
 
 type UnifiedInputType = "pdf" | "images" | "text";
-const MAX_IMAGES_PER_ANALYSIS = 10;
-const MIN_OCR_TEXT_CHARS = 30;
 
 async function ingestToUnifiedText(input: {
   userId: number;
@@ -39,7 +35,7 @@ async function ingestToUnifiedText(input: {
   images?: Array<{ base64: string; mimeType?: string; size?: number }>;
 }) {
   if (input.inputType === "text") {
-    const text = capContractTextForV1((input.text || "").trim());
+    const text = (input.text || "").trim();
     if (text.length < 10) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "Please provide at least 10 characters of text." });
     }
@@ -54,7 +50,7 @@ async function ingestToUnifiedText(input: {
       throw new TRPCError({ code: "BAD_REQUEST", message: "PDF file size must be less than 10MB." });
     }
     const pdfBuffer = Buffer.from(input.pdfBase64, "base64");
-    const text = capContractTextForV1(await extractTextFromPDF(pdfBuffer));
+    const text = await extractTextFromPDF(pdfBuffer);
     if (!text || text.length < 10) {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -63,26 +59,14 @@ async function ingestToUnifiedText(input: {
     }
     const fileKey = `contracts/${input.userId}/${Date.now()}-${input.name}`;
     const { url: fileUrl } = await storagePut(fileKey, pdfBuffer, "application/pdf");
-    return { text, contentType: "pdf" as const, fileUrl, fileSize: input.pdfFileSize, cacheIdentity: "" };
+    return { text, contentType: "pdf" as const, fileUrl, fileSize: input.pdfFileSize };
   }
 
   const images = input.images || [];
   if (images.length === 0) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Please select at least one image." });
   }
-  if (images.length > MAX_IMAGES_PER_ANALYSIS) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `You can upload up to ${MAX_IMAGES_PER_ANALYSIS} images per document.`,
-    });
-  }
-  const orderedImageIdentity = computeContentHash(
-    images
-      .map((image, idx) => `${idx + 1}:${computeContentHash(image.base64)}`)
-      .join("|"),
-  );
   const uploadedImageUrls: string[] = [];
-  // Preserve selected/captured order for multi-page OCR.
   for (let i = 0; i < images.length; i += 1) {
     const image = images[i];
     const buffer = Buffer.from(image.base64, "base64");
@@ -91,14 +75,14 @@ async function ingestToUnifiedText(input: {
     const uploaded = await storagePut(fileKey, buffer, mimeType);
     uploadedImageUrls.push(uploaded.url);
   }
-  const text = capContractTextForV1(await extractTextFromImages(uploadedImageUrls));
-  if (!text || text.length < MIN_OCR_TEXT_CHARS) {
+  const text = await extractTextFromImages(uploadedImageUrls);
+  if (!text || text.length < 10) {
     throw new TRPCError({
       code: "BAD_REQUEST",
-      message: "We couldn't read the document. Please try clearer photos.",
+      message: "We couldn't read the document. Please try a clearer photo or different file.",
     });
   }
-  return { text, contentType: "images" as const, cacheIdentity: orderedImageIdentity };
+  return { text, contentType: "images" as const };
 }
 
 async function enqueueUnifiedDocument(input: {
@@ -118,7 +102,6 @@ async function enqueueUnifiedDocument(input: {
       text: ingested.text,
       mode: "standard",
       contentType: ingested.contentType,
-      cacheIdentity: ingested.cacheIdentity,
       fileUrl: ingested.fileUrl,
       fileSize: ingested.fileSize,
     },

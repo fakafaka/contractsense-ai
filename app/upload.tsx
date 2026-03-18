@@ -28,110 +28,12 @@ export default function UploadScreen() {
   const [contractText, setContractText] = useState("");
   const [contractName, setContractName] = useState("");
   const [analysisStage, setAnalysisStage] = useState<"uploading" | "processing" | "analyzing" | null>(null);
-  const [isPurchasing, setIsPurchasing] = useState(false);
 
   const enqueueDocumentMutation = trpc.contracts.enqueueDocumentAsync.useMutation();
   const cancelJobMutation = trpc.contracts.cancelJob.useMutation();
   const trpcUtils = trpc.useUtils();
   const activeJobIdRef = useRef<string | null>(null);
-  const handledTransactionsRef = useRef<Set<string>>(new Set());
   const { data: usage } = trpc.contracts.usageStatus.useQuery();
-
-  const validateReceiptWithBackend = async (receipt: string, productId: string) => {
-    const baseUrl = getApiBaseUrl();
-    const response = await fetch(`${baseUrl}/api/iap/validate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ receipt, productId }),
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload?.success) {
-      throw new Error(payload?.error || "Purchase validation failed");
-    }
-    await trpcUtils.contracts.usageStatus.invalidate();
-    return payload as { success: true; creditsAdded: number; remainingCredits: number; duplicate?: boolean };
-  };
-
-  const handleBuyFiveCredits = async () => {
-    try {
-      setIsPurchasing(true);
-      await getIapProducts();
-      await requestFiveCreditsPurchase();
-    } catch (error: any) {
-      if (String(error?.message || "").toLowerCase().includes("cancel")) {
-        Alert.alert("Purchase Cancelled", "No charges were made.");
-      } else {
-        Alert.alert("Purchase Failed", error?.message || "Unable to complete purchase.");
-      }
-    } finally {
-      setIsPurchasing(false);
-    }
-  };
-
-  const handleRestorePurchases = async () => {
-    try {
-      setIsPurchasing(true);
-      const purchases = await getRestorePurchases();
-      let latestRemaining = usage?.remainingCredits ?? 0;
-      for (const purchase of purchases || []) {
-        const receipt = (purchase as any)?.transactionReceipt || (purchase as any)?.transactionReceiptData;
-        if (!receipt) continue;
-        const result = await validateReceiptWithBackend(receipt, IAP_PRODUCT_ID);
-        await finishIapTransaction(purchase as any).catch(() => {});
-        latestRemaining = result.remainingCredits;
-      }
-      Alert.alert("Restore Complete", `You now have ${latestRemaining} analyses available.`);
-    } catch (error: any) {
-      Alert.alert("Restore Failed", error?.message || "Unable to restore purchases.");
-    } finally {
-      setIsPurchasing(false);
-    }
-  };
-
-  useEffect(() => {
-    let updatedSub: { remove?: () => void } | null = null;
-    let errorSub: { remove?: () => void } | null = null;
-    let mounted = true;
-
-    (async () => {
-      try {
-        await initIapConnection();
-        if (!mounted) return;
-        updatedSub = purchaseUpdatedListener(async (purchase: any) => {
-          const txId = String(purchase?.transactionId || purchase?.transactionIdentifier || "");
-          if (txId && handledTransactionsRef.current.has(txId)) return;
-          if (txId) handledTransactionsRef.current.add(txId);
-
-          try {
-            const receipt = purchase?.transactionReceipt || purchase?.transactionReceiptData;
-            if (!receipt) return;
-            const validated = await validateReceiptWithBackend(receipt, IAP_PRODUCT_ID);
-            await finishIapTransaction(purchase);
-            Alert.alert("Purchase Successful", `You now have ${validated.remainingCredits} analyses available.`);
-          } catch (error: any) {
-            Alert.alert("Purchase Validation Failed", error?.message || "Unable to validate purchase.");
-          } finally {
-            setIsPurchasing(false);
-          }
-        });
-
-        errorSub = purchaseErrorListener((error: any) => {
-          setIsPurchasing(false);
-          Alert.alert("Purchase Failed", error?.message || "Unable to complete purchase.");
-        });
-      } catch (error: any) {
-        Alert.alert("IAP Setup Error", error?.message || "In-app purchases are not configured.");
-      }
-    })();
-
-    return () => {
-      mounted = false;
-      updatedSub?.remove?.();
-      errorSub?.remove?.();
-      void endIapConnection();
-    };
-  }, []);
 
   const waitForJobCompletion = async (jobId: string) => {
     activeJobIdRef.current = jobId;
@@ -538,24 +440,6 @@ export default function UploadScreen() {
                 Remaining credits: <Text className="text-foreground font-semibold">{usage.remainingCredits}</Text>.{" "}
                 New users get 3 free analyses. Additional +5 credit packs will be available in V1.
               </Text>
-              <TouchableOpacity
-                className="mt-3 bg-primary px-4 py-3 rounded-xl"
-                style={{ opacity: isPurchasing ? 0.6 : 1 }}
-                disabled={isPurchasing}
-                onPress={handleBuyFiveCredits}
-              >
-                <Text className="text-white font-semibold text-center">
-                  {isPurchasing ? "Processing Purchase..." : "Buy 5 analyses for $1.99"}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="mt-2 px-4 py-3 rounded-xl border border-border"
-                style={{ opacity: isPurchasing ? 0.6 : 1 }}
-                disabled={isPurchasing}
-                onPress={handleRestorePurchases}
-              >
-                <Text className="text-foreground font-semibold text-center">Restore Purchases</Text>
-              </TouchableOpacity>
             </View>
           )}
 
