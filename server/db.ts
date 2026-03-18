@@ -6,14 +6,12 @@ import {
   contracts,
   analyses,
   userCredits,
-  iapPurchases,
   type Contract,
   type Analysis,
   type InsertContract,
   type InsertAnalysis,
   type UserCredits,
-  type InsertUserCredits,
-  type InsertIapPurchase
+  type InsertUserCredits
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -444,31 +442,6 @@ export async function consumeAnalysisQuota(userId: number): Promise<AnalysisQuot
 
 export async function releaseAnalysisQuota(userId: number): Promise<void> {
   await releaseAnalysisCredit(userId);
-}
-
-export async function addPaidCredits(userId: number, credits: number): Promise<void> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  if (credits <= 0) return;
-  await getOrCreateUserCredits(userId);
-  await db
-    .update(userCredits)
-    .set({ paidCreditsGranted: sql`${userCredits.paidCreditsGranted} + ${credits}` })
-    .where(eq(userCredits.userId, userId));
-}
-
-export async function getIapPurchaseByTransactionId(transactionId: string) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const rows = await db.select().from(iapPurchases).where(eq(iapPurchases.transactionId, transactionId)).limit(1);
-  return rows[0] || null;
-}
-
-export async function createIapPurchase(data: InsertIapPurchase): Promise<number> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = (await db.insert(iapPurchases).values(data)) as any;
-  return Number(result.insertId);
 }
 
 export async function getUserSubscription(userId: number): Promise<{
