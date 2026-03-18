@@ -144,11 +144,15 @@ async function startServer() {
       }
 
       await db.createIapPurchase({
-        userId: ctx.user.id,
+        userId: String(ctx.user.id),
         transactionId: validated.transactionId,
+        originalTransactionId: null,
         productId: validated.productId,
+        environment: process.env.NODE_ENV === "production" ? "Production" : "Sandbox",
+        purchaseDateMs: null,
+        rawPayload: receipt,
       });
-      await db.addPaidCredits(ctx.user.id, IAP_CREDITS_PER_PURCHASE);
+      await db.addPaidCredits(String(ctx.user.id), IAP_CREDITS_PER_PURCHASE);
       const usage = await db.getCreditUsageState(ctx.user.id);
       res.json({
         success: true,
