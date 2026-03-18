@@ -2,7 +2,18 @@ import { invokeLLM } from "./_core/llm";
 import { PDFParse } from "pdf-parse";
 import crypto from "crypto";
 
-export type AnalysisMode = "quick" | "deep";
+export type AnalysisMode = "standard";
+export const MAX_ANALYSIS_PAGES = 10;
+export const MAX_TEXT_CHARS_FOR_ANALYSIS = 60_000;
+export const ANALYSIS_CACHE_VERSION = "v1";
+export const ANALYSIS_SCOPE_NOTE =
+  "Only the first 10 pages (or equivalent capped text section) were analyzed.";
+
+export type AnalysisScopeMetadata = {
+  truncated: boolean;
+  pagesAnalyzed: number;
+  analysisScopeNote: string;
+};
 
 export interface AnalysisResult {
   summary: string;
@@ -20,6 +31,7 @@ export interface AnalysisResult {
   mode: AnalysisMode;
   cached?: boolean;
   contentHash?: string;
+  scope: AnalysisScopeMetadata;
 }
 
 /**
@@ -30,15 +42,37 @@ export function computeContentHash(text: string): string {
   return crypto.createHash("sha256").update(normalized, "utf8").digest("hex");
 }
 
+export function buildAnalysisCacheKey(
+  contentType: "text" | "pdf" | "images",
+  sourceText: string,
+  sourceIdentity = "",
+): string {
+  const capped = capContractTextForV1(sourceText);
+  const normalizedHash = computeContentHash(capped);
+  return computeContentHash(`${ANALYSIS_CACHE_VERSION}:${contentType}:${sourceIdentity}:${normalizedHash}`);
+}
+
+export function getAnalysisScopeMetadata(text: string): AnalysisScopeMetadata {
+  const pages = text.split("\f");
+  const originalPages = Math.max(1, pages.filter((page) => page.trim().length > 0).length || pages.length);
+  const truncatedByPages = originalPages > MAX_ANALYSIS_PAGES;
+  const truncatedByChars = text.length > MAX_TEXT_CHARS_FOR_ANALYSIS;
+  return {
+    truncated: truncatedByPages || truncatedByChars,
+    pagesAnalyzed: Math.min(MAX_ANALYSIS_PAGES, originalPages),
+    analysisScopeNote: ANALYSIS_SCOPE_NOTE,
+  };
+}
+
 /**
  * Analyzes a contract using AI to extract key information in plain English
  * @param contractText The full text of the contract
- * @param mode Analysis mode: "quick" (default, strict limits) or "deep" (longer output)
+ * @param mode Analysis mode (single V1 mode)
  * @returns Structured analysis results
  */
 export async function analyzeContract(
   contractText: string,
-  mode: AnalysisMode = "quick"
+  mode: AnalysisMode = "standard"
 ): Promise<AnalysisResult> {
   const startTime = Date.now();
 
@@ -53,14 +87,14 @@ IMPORTANT GUIDELINES:
 - This is NOT legal advice - you're helping people understand, not advising them legally
 - Be objective and balanced - don't exaggerate risks but don't minimize them either`;
 
-  const isQuick = mode === "quick";
-  const maxWords = isQuick ? 200 : 400;
-  const maxTokens = isQuick ? 300 : 600;
+  const cappedContractText = capContractTextForV1(contractText);
+  const scope = getAnalysisScopeMetadata(contractText);
+  const maxTokens = 350;
 
-  const userPrompt = `Analyze this contract BRIEFLY in plain English. Total output must be ${isQuick ? "150-200" : "250-400"} words max.
+  const userPrompt = `Analyze this contract BRIEFLY in plain English. Total output must be 150-220 words.
 
 CONTRACT TEXT:
-${contractText}
+${cappedContractText}
 
 Provide analysis in this JSON format:
 
@@ -93,7 +127,8 @@ STRICT RULES:
 - Potential risks: 3-5 items, title 3-5 words, description max 20 words. Use neutral language: "It may mean...", "This could result in..."
 - Red flags: 3-5 items, title 3-5 words, description max 20 words. Use neutral language: "This clause indicates...", "The document allows..."
 - NO paragraphs, NO repetition, NO extra context, NO imperative advice
-- Total output: 250-400 words max`;
+- Total output: 150-220 words max
+- You MUST explicitly mention that ONLY the first 10 pages were analyzed (or equivalent capped excerpt for pasted text).`;
 
   try {
     const response = await invokeLLM({
@@ -132,7 +167,8 @@ STRICT RULES:
           }))
         : [],
       mode,
-      contentHash: computeContentHash(contractText),
+      contentHash: computeContentHash(cappedContractText),
+      scope,
     };
 
     const processingTime = Date.now() - startTime;
@@ -163,8 +199,9 @@ export async function extractTextFromPDF(pdfBuffer: Buffer): Promise<string> {
       throw new Error("NO_TEXT_FOUND");
     }
     
-    console.log(`[PDF Extraction] Successfully extracted ${extractedText.length} characters`);
-    return extractedText;
+    const capped = capContractTextForV1(extractedText);
+    console.log(`[PDF Extraction] Successfully extracted ${extractedText.length} characters (capped to ${capped.length} for V1 analysis)`);
+    return capped;
   } catch (error: any) {
     console.error("[PDF Extraction] Error:", error);
     
@@ -174,6 +211,53 @@ export async function extractTextFromPDF(pdfBuffer: Buffer): Promise<string> {
     
     throw new Error("Failed to extract text from PDF. Please try uploading as text instead.");
   }
+}
+
+export async function extractTextFromImages(imageUrls: string[]): Promise<string> {
+  if (!imageUrls.length) {
+    throw new Error("No images were provided.");
+  }
+
+  const content = [
+    {
+      type: "text" as const,
+      text:
+        "Extract readable contract text from these document photos in page order. Return strict JSON: {\"text\":\"...\"}. If unreadable, return an empty string.",
+    },
+    ...imageUrls.map((url) => ({
+      type: "image_url" as const,
+      image_url: { url, detail: "high" as const },
+    })),
+  ];
+
+  try {
+    const response = await invokeLLM({
+      messages: [{ role: "user", content }],
+      response_format: { type: "json_object" },
+      max_tokens: 1200,
+    });
+    const raw = response.choices[0].message.content;
+    if (typeof raw !== "string") throw new Error("Invalid OCR response");
+    const parsed = JSON.parse(raw);
+    const text = String(parsed?.text || "").trim();
+    if (text.length < 10) {
+      throw new Error("OCR_EMPTY");
+    }
+    return capContractTextForV1(text);
+  } catch (error: any) {
+    if (error?.message === "OCR_EMPTY") {
+      throw new Error("We couldn't read the document. Please try clearer photos.");
+    }
+    throw new Error("We couldn't read the document. Please try clearer photos.");
+  }
+}
+
+export function capContractTextForV1(text: string): string {
+  if (!text) return "";
+  // Form feed \f is a common PDF page separator in extracted text.
+  const pages = text.split("\f");
+  const firstTenPages = pages.slice(0, MAX_ANALYSIS_PAGES).join("\f");
+  return firstTenPages.slice(0, MAX_TEXT_CHARS_FOR_ANALYSIS).trim();
 }
 
 
@@ -200,12 +284,9 @@ function hasImperativeTone(text: string) {
 export function evaluateAnalysisQuality(
   analysis: Pick<AnalysisResult, "summary" | "mainObligations" | "potentialRisks" | "redFlags" | "mode">,
 ): AnalysisQualityReport {
-  const isQuick = analysis.mode === "quick";
   const summaryWords = wordCount(analysis.summary || "");
 
-  const summaryLengthOk = isQuick
-    ? summaryWords >= 15 && summaryWords <= 70
-    : summaryWords >= 25 && summaryWords <= 110;
+  const summaryLengthOk = summaryWords >= 15 && summaryWords <= 80;
   const obligationsCountOk = analysis.mainObligations.length >= 3 && analysis.mainObligations.length <= 5;
   const risksCountOk = analysis.potentialRisks.length >= 3 && analysis.potentialRisks.length <= 5;
   const redFlagsCountOk = analysis.redFlags.length >= 3 && analysis.redFlags.length <= 5;
@@ -225,7 +306,7 @@ export function evaluateAnalysisQuality(
   if (!neutralToneOk) score -= 20;
 
   const suggestions: string[] = [];
-  if (!summaryLengthOk) suggestions.push("Keep summary concise and within target word range for the selected mode.");
+  if (!summaryLengthOk) suggestions.push("Keep summary concise and within target word range.");
   if (!obligationsCountOk) suggestions.push("Return 3-5 concrete obligation bullets.");
   if (!risksCountOk) suggestions.push("Return 3-5 potential risks with short descriptions.");
   if (!redFlagsCountOk) suggestions.push("Return 3-5 red flags grouped by category.");

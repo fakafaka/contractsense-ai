@@ -1,12 +1,6 @@
 import * as Linking from "expo-linking";
 import * as ReactNative from "react-native";
 
-// Extract scheme from bundle ID (last segment timestamp, prefixed with "manus")
-// e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
-const bundleId = "space.manus.contractsense.ai.t20260123100717";
-const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
-const schemeFromBundleId = `manus${timestamp}`;
-
 const env = {
   portal: process.env.EXPO_PUBLIC_OAUTH_PORTAL_URL ?? "",
   server: process.env.EXPO_PUBLIC_OAUTH_SERVER_URL ?? "",
@@ -14,7 +8,7 @@ const env = {
   ownerId: process.env.EXPO_PUBLIC_OWNER_OPEN_ID ?? "",
   ownerName: process.env.EXPO_PUBLIC_OWNER_NAME ?? "",
   apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "",
-  deepLinkScheme: schemeFromBundleId,
+  deepLinkScheme: "contractsenseai",
 };
 
 export const OAUTH_PORTAL_URL = env.portal;
@@ -24,6 +18,15 @@ export const OWNER_OPEN_ID = env.ownerId;
 export const OWNER_NAME = env.ownerName;
 export const API_BASE_URL = env.apiBaseUrl;
 
+function normalizeAbsoluteBaseUrl(raw: string): string {
+  const value = raw.trim().replace(/\/+$/, "");
+  const parsed = new URL(value);
+  if (!/^https?:$/.test(parsed.protocol)) {
+    throw new Error(`EXPO_PUBLIC_API_BASE_URL must use http or https, got: ${parsed.protocol}`);
+  }
+  return `${parsed.protocol}//${parsed.host}${parsed.pathname}`.replace(/\/+$/, "");
+}
+
 /**
  * Get the API base URL, deriving from current hostname if not set.
  * Metro runs on 8081, API server runs on 3000.
@@ -32,7 +35,7 @@ export const API_BASE_URL = env.apiBaseUrl;
 export function getApiBaseUrl(): string {
   // If API_BASE_URL is set, use it
   if (API_BASE_URL) {
-    return API_BASE_URL.replace(/\/$/, "");
+    return normalizeAbsoluteBaseUrl(API_BASE_URL);
   }
 
   // On web, derive from current hostname by replacing port 8081 with 3000
@@ -45,12 +48,21 @@ export function getApiBaseUrl(): string {
     }
   }
 
-  // Fallback to empty (will use relative URL)
-  return "";
+  if (ReactNative.Platform.OS !== "web") {
+    throw new Error(
+      "EXPO_PUBLIC_API_BASE_URL is required on native builds. Set it to an absolute backend URL (for example, https://api.example.com).",
+    );
+  }
+
+  // Web-only fallback: same origin
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin.replace(/\/+$/, "");
+  }
+  return "http://localhost:3000";
 }
 
 export const SESSION_TOKEN_KEY = "app_session_token";
-export const USER_INFO_KEY = "manus-runtime-user-info";
+export const USER_INFO_KEY = "contractsense-runtime-user-info";
 
 const encodeState = (value: string) => {
   if (typeof globalThis.btoa === "function") {

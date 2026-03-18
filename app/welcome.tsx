@@ -15,7 +15,7 @@ export default function WelcomeScreen() {
             ContractSense AI
           </Text>
           <Text className="text-xl text-muted text-center">
-            Understand contracts in plain English
+            Understand contracts in plain English (first 10 pages only)
           </Text>
         </View>
 
@@ -26,6 +26,7 @@ export default function WelcomeScreen() {
           </Text>
           <Text className="text-sm text-muted leading-relaxed text-center">
             This analysis is for informational purposes only and does not constitute legal advice.
+            New users get 3 free analyses, and only the first 10 pages are analyzed.
             Please consult with a qualified attorney for legal guidance regarding contracts.
           </Text>
         </View>
