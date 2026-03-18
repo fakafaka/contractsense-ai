@@ -5,7 +5,7 @@ import { getDefaultQualityFixtures, runQualityEvaluation } from "../server/analy
 describe("analysis quality scoring", () => {
   it("returns lower score for imperative low-structure outputs", () => {
     const poor = evaluateAnalysisQuality({
-      mode: "quick",
+      mode: "standard",
       summary: "You must sign this contract immediately.",
       mainObligations: ["You must pay now"],
       potentialRisks: [{ title: "Risk", description: "Bad", severity: "high" }],
