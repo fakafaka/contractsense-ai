@@ -20,7 +20,7 @@ export function getDefaultQualityFixtures(): QualityFixture[] {
       name: "quick-good",
       minimumScore: 80,
       analysis: {
-        mode: "quick",
+        mode: "standard",
         summary:
           "This contract sets monthly payments, confidentiality requirements, and termination notice timelines between the provider and client.",
         mainObligations: [
@@ -44,7 +44,7 @@ export function getDefaultQualityFixtures(): QualityFixture[] {
       name: "quick-poor",
       minimumScore: 0,
       analysis: {
-        mode: "quick",
+        mode: "standard",
         summary: "You must sign this now.",
         mainObligations: ["You must pay"],
         potentialRisks: [{ title: "Risk", description: "Bad", severity: "high" }],

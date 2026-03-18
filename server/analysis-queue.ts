@@ -1,6 +1,12 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
-import { analyzeContract, computeContentHash, type AnalysisMode } from "./contract-analyzer";
+import {
+  analyzeContract,
+  buildAnalysisCacheKey,
+  computeContentHash,
+  getAnalysisScopeMetadata,
+  type AnalysisMode,
+} from "./contract-analyzer";
 
 export type AnalysisJobStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
 
@@ -8,7 +14,7 @@ type QueueJobInput = {
   name: string;
   text: string;
   mode: AnalysisMode;
-  contentType: "text" | "pdf";
+  contentType: "text" | "pdf" | "images";
   fileUrl?: string;
   fileSize?: number;
 };
@@ -43,7 +49,12 @@ type QueueJob = {
   result?: {
     analysisId: number;
     contractId: number;
-    cached?: boolean;
+    cacheHit: boolean;
+    creditConsumed: boolean;
+    remainingCredits: number;
+    truncated: boolean;
+    pagesAnalyzed: number;
+    analysisScopeNote: string;
   };
   error?: string;
 };
@@ -64,8 +75,8 @@ function makeJobId() {
 }
 
 function makeDedupeKey(userId: number, input: QueueJobInput) {
-  const contentHash = computeContentHash(input.text);
-  return `${userId}:${input.contentType}:${input.mode}:${contentHash}`;
+  const cacheKey = buildAnalysisCacheKey(input.contentType, input.text);
+  return `${userId}:${cacheKey}`;
 }
 
 function isCancelled(job: QueueJob) {
@@ -93,7 +104,8 @@ async function processJob(job: QueueJob) {
   if (isCancelled(job)) return;
   const startedAt = Date.now();
   let createdContractId: number | null = null;
-  let quotaConsumed = false;
+  let creditConsumed = false;
+  let creditReleased = false;
   job.status = "processing";
   job.updatedAt = startedAt;
   try {
@@ -101,30 +113,37 @@ async function processJob(job: QueueJob) {
     if (job.input.text.length > MAX_TEXT_CHARS) {
       throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `Contract text too large (max ${MAX_TEXT_CHARS} chars)` });
     }
-    const contentHash = computeContentHash(job.input.text);
+    const contentHash = buildAnalysisCacheKey(job.input.contentType, job.input.text);
+    const scope = getAnalysisScopeMetadata(job.input.text);
 
-    const cached = await db.findUserCachedAnalysis(job.userId, contentHash, mode);
+    const cached = await db.findUserCachedAnalysis(job.userId, contentHash);
     if (cached) {
+      const usage = await db.getCreditUsageState(job.userId);
       job.status = "completed";
       job.updatedAt = Date.now();
       job.result = {
         analysisId: cached.id,
         contractId: cached.contractId,
-        cached: true,
+        cacheHit: true,
+        creditConsumed: false,
+        remainingCredits: usage.remainingCredits,
+        truncated: scope.truncated,
+        pagesAnalyzed: scope.pagesAnalyzed,
+        analysisScopeNote: scope.analysisScopeNote,
       };
       return;
     }
 
     if (isCancelled(job)) return;
 
-    const quota = await db.consumeAnalysisQuota(job.userId);
-    if (!quota.allowed) {
+    const creditDecision = await db.consumeAnalysisQuota(job.userId);
+    if (!creditDecision.allowed) {
       throw new TRPCError({
         code: "FORBIDDEN",
-        message: `Monthly analysis limit reached (${quota.analysesThisMonth}/${quota.monthlyLimit}). Upgrade to premium for more analyses.`,
+        message: "No analysis credits remaining. New users receive 3 free analyses in V1.",
       });
     }
-    quotaConsumed = true;
+    creditConsumed = true;
 
     createdContractId = await db.createContract({
       userId: job.userId,
@@ -158,13 +177,23 @@ async function processJob(job: QueueJob) {
 
     job.status = "completed";
     job.updatedAt = Date.now();
-    job.result = { analysisId, contractId: createdContractId };
+    job.result = {
+      analysisId,
+      contractId: createdContractId,
+      cacheHit: false,
+      creditConsumed: true,
+      remainingCredits: creditDecision.remaining,
+      truncated: analysis.scope.truncated,
+      pagesAnalyzed: analysis.scope.pagesAnalyzed,
+      analysisScopeNote: analysis.scope.analysisScopeNote,
+    };
   } catch (error) {
-    if (quotaConsumed) {
+    if (creditConsumed && !creditReleased) {
+      creditReleased = true;
       try {
         await db.releaseAnalysisQuota(job.userId);
       } catch (quotaError) {
-        console.error("[Queue] Failed to rollback consumed quota", quotaError);
+        console.error("[Queue] Failed to rollback consumed credit", quotaError);
       }
     }
 
@@ -179,6 +208,19 @@ async function processJob(job: QueueJob) {
       job.status = "failed";
       job.updatedAt = Date.now();
       job.error = error instanceof Error ? error.message : String(error);
+      const usage = await db.getCreditUsageState(job.userId).catch(() => null);
+      if (usage) {
+        job.result = {
+          analysisId: 0,
+          contractId: 0,
+          cacheHit: false,
+          creditConsumed: false,
+          remainingCredits: usage.remainingCredits,
+          truncated: false,
+          pagesAnalyzed: 0,
+          analysisScopeNote: "",
+        };
+      }
     }
   }
 }
@@ -262,8 +304,13 @@ export function getAnalysisJob(jobId: string, userId: number) {
     status: job.status,
     analysisId: job.result?.analysisId,
     contractId: job.result?.contractId,
-    cached: job.result?.cached,
+    cacheHit: job.result?.cacheHit ?? false,
+    creditConsumed: job.result?.creditConsumed ?? false,
+    remainingCredits: job.result?.remainingCredits,
     error: job.error,
+    truncated: job.result?.truncated ?? false,
+    pagesAnalyzed: job.result?.pagesAnalyzed ?? 0,
+    analysisScopeNote: job.result?.analysisScopeNote ?? "",
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
   };

@@ -30,7 +30,7 @@ export const contracts = mysqlTable("contracts", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId"), // Nullable - no authentication in MVP
   name: varchar("name", { length: 255 }).notNull(),
-  contentType: mysqlEnum("contentType", ["pdf", "text"]).notNull(),
+  contentType: mysqlEnum("contentType", ["pdf", "text", "images"]).notNull(),
   originalText: text("originalText").notNull(),
   fileUrl: varchar("fileUrl", { length: 512 }), // S3 URL for PDF files
   fileSize: int("fileSize"), // File size in bytes
@@ -53,7 +53,7 @@ export const analyses = mysqlTable("analyses", {
   // Metadata
   analysisVersion: varchar("analysisVersion", { length: 16 }).default("1.0").notNull(),
   processingTimeMs: int("processingTimeMs").notNull().default(0), // Time taken to analyze, defaults to 0 if unavailable
-  mode: mysqlEnum("mode", ["quick", "deep"]).default("quick").notNull(), // Analysis mode
+  mode: mysqlEnum("mode", ["standard"]).default("standard").notNull(), // Single V1 analysis mode
   contentHash: varchar("contentHash", { length: 64 }), // SHA256 hash for deduplication
   deleteToken: varchar("deleteToken", { length: 64 }).notNull(), // Unique token for secure deletion
   
@@ -73,6 +73,17 @@ export const userSubscriptions = mysqlTable("userSubscriptions", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+// Credit-based usage model (V1 source of truth for analysis consumption)
+export const userCredits = mysqlTable("userCredits", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  freeCreditsGranted: int("freeCreditsGranted").default(3).notNull(),
+  paidCreditsGranted: int("paidCreditsGranted").default(0).notNull(),
+  creditsConsumed: int("creditsConsumed").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export type Contract = typeof contracts.$inferSelect;
 export type InsertContract = typeof contracts.$inferInsert;
 
@@ -81,3 +92,5 @@ export type InsertAnalysis = typeof analyses.$inferInsert;
 
 export type UserSubscription = typeof userSubscriptions.$inferSelect;
 export type InsertUserSubscription = typeof userSubscriptions.$inferInsert;
+export type UserCredits = typeof userCredits.$inferSelect;
+export type InsertUserCredits = typeof userCredits.$inferInsert;
