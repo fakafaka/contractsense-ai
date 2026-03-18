@@ -8,6 +8,12 @@ import { getAnalysisQueueStats } from "../analysis-queue";
 import { createContext } from "./context";
 import { getRetentionSweepStats, startRetentionSweep } from "../retention";
 import { canAccessOpsEndpoints, isRetentionSweepHealthy } from "./ops";
+import * as db from "../db";
+import {
+  IAP_CREDITS_PER_PURCHASE,
+  IAP_PRODUCT_ID,
+  validateAppleConsumableReceipt,
+} from "../iap";
 
 async function startServer() {
   const app = express();
@@ -110,6 +116,51 @@ async function startServer() {
       retention,
       queue,
     });
+  });
+
+  app.post("/api/iap/validate", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res, info: {} as any });
+      if (!ctx.user) {
+        res.status(401).json({ success: false, error: "Unauthorized" });
+        return;
+      }
+
+      const receipt = String(req.body?.receipt || "").trim();
+      const productId = String(req.body?.productId || "").trim();
+      const expectedProductId = productId || IAP_PRODUCT_ID;
+
+      const validated = await validateAppleConsumableReceipt(receipt, expectedProductId);
+      const existing = await db.getIapPurchaseByTransactionId(validated.transactionId);
+      if (existing) {
+        const usage = await db.getCreditUsageState(ctx.user.id);
+        res.json({
+          success: true,
+          creditsAdded: 0,
+          remainingCredits: usage.remainingCredits,
+          duplicate: true,
+        });
+        return;
+      }
+
+      await db.createIapPurchase({
+        userId: ctx.user.id,
+        transactionId: validated.transactionId,
+        productId: validated.productId,
+      });
+      await db.addPaidCredits(ctx.user.id, IAP_CREDITS_PER_PURCHASE);
+      const usage = await db.getCreditUsageState(ctx.user.id);
+      res.json({
+        success: true,
+        creditsAdded: IAP_CREDITS_PER_PURCHASE,
+        remainingCredits: usage.remainingCredits,
+      });
+    } catch (error: any) {
+      res.status(400).json({
+        success: false,
+        error: error?.message || "Purchase validation failed",
+      });
+    }
   });
   app.use(
     "/api/trpc",

@@ -1,12 +1,24 @@
 import { ScrollView, Text, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, Linking } from "react-native";
 import { router } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { trpc } from "@/lib/trpc";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { getApiBaseUrl } from "@/constants/oauth";
+import {
+  endIapConnection,
+  finishIapTransaction,
+  getIapProducts,
+  initIapConnection,
+  purchaseErrorListener,
+  purchaseUpdatedListener,
+  getRestorePurchases,
+  IAP_PRODUCT_ID,
+  requestFiveCreditsPurchase,
+} from "@/lib/iap";
 
 export default function UploadScreen() {
   const colors = useColors();
