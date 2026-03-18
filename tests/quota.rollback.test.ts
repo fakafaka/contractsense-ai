@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { appRouter } from "../server/routers";
 import type { TrpcContext } from "../server/_core/context";
 import * as db from "../server/db";
+import * as queue from "../server/analysis-queue";
 
 function makeCtx(user: TrpcContext["user"]): TrpcContext {
   return {
@@ -15,18 +16,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("quota rollback", () => {
-  it("rolls back consumed quota when sync analyzeText fails", async () => {
-    vi.spyOn(db, "findUserCachedAnalysis").mockResolvedValue(null as any);
-    vi.spyOn(db, "consumeAnalysisQuota").mockResolvedValue({
-      allowed: true,
-      remaining: 2,
-      plan: "free",
-      monthlyLimit: 3,
-      analysesThisMonth: 1,
+describe("analysis usage state", () => {
+  it("returns usage fields on analysis enqueue without immediate consumption", async () => {
+    vi.spyOn(queue, "enqueueAnalysisJob").mockReturnValue({ jobId: "job-1", status: "pending", deduped: false } as any);
+    vi.spyOn(db, "getCreditUsageState").mockResolvedValue({
+      remainingCredits: 3,
+      totalCredits: 3,
+      creditsConsumed: 0,
     });
-    const releaseSpy = vi.spyOn(db, "releaseAnalysisQuota").mockResolvedValue();
-    vi.spyOn(db, "createContract").mockRejectedValue(new Error("db down"));
 
     const caller = appRouter.createCaller(
       makeCtx({
@@ -42,14 +39,17 @@ describe("quota rollback", () => {
       } as any),
     );
 
-    await expect(
-      caller.contracts.analyzeText({
-        name: "Contract",
-        text: "Some contract text with enough length",
-        mode: "quick",
-      }),
-    ).rejects.toThrow();
+    const result = await caller.contracts.analyzeText({
+      name: "Contract",
+      text: "Some contract text with enough length",
+      mode: "standard",
+    });
 
-    expect(releaseSpy).toHaveBeenCalledWith(123);
+    expect(result).toMatchObject({
+      jobId: "job-1",
+      creditConsumed: false,
+      cacheHit: false,
+      remainingCredits: 3,
+    });
   });
 });

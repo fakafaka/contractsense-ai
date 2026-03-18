@@ -1,17 +1,19 @@
-import { and, eq, desc, inArray, lt } from "drizzle-orm";
+import { and, eq, desc, inArray, lt, gt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, 
   users,
   contracts,
   analyses,
-  userSubscriptions,
+  userCredits,
+  iapPurchases,
   type Contract,
   type Analysis,
   type InsertContract,
   type InsertAnalysis,
-  type UserSubscription,
-  type InsertUserSubscription
+  type UserCredits,
+  type InsertUserCredits,
+  type InsertIapPurchase
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -260,14 +262,14 @@ export async function deleteUserData(userId: number): Promise<{ analysesDeleted:
 /**
  * Find cached analysis by content hash and mode
  */
-export async function findCachedAnalysis(contentHash: string, mode: string): Promise<Analysis | null> {
+export async function findCachedAnalysis(contentHash: string): Promise<Analysis | null> {
   const db = await getDb();
   if (!db) return null;
   
   const result = await db
     .select()
     .from(analyses)
-    .where(and(eq(analyses.contentHash, contentHash), eq(analyses.mode, mode as any)))
+    .where(eq(analyses.contentHash, contentHash))
     .orderBy(desc(analyses.createdAt))
     .limit(1);
   
@@ -277,7 +279,6 @@ export async function findCachedAnalysis(contentHash: string, mode: string): Pro
 export async function findUserCachedAnalysis(
   userId: number,
   contentHash: string,
-  mode: string,
 ): Promise<Analysis | null> {
   const db = await getDb();
   if (!db) return null;
@@ -289,7 +290,6 @@ export async function findUserCachedAnalysis(
       and(
         eq(analyses.userId, userId),
         eq(analyses.contentHash, contentHash),
-        eq(analyses.mode, mode as any),
       ),
     )
     .orderBy(desc(analyses.createdAt))
@@ -318,159 +318,203 @@ export async function getAllAnalyses(): Promise<Analysis[]> {
 }
 
 // ============================================
-// Subscription Operations
+// Credit Operations
 // ============================================
 
-export async function getUserSubscription(userId: number): Promise<UserSubscription | null> {
+export async function getUserCredits(userId: number): Promise<UserCredits | null> {
   const db = await getDb();
   if (!db) return null;
   
-  const result = await db.select().from(userSubscriptions).where(eq(userSubscriptions.userId, userId)).limit(1);
+  const result = await db.select().from(userCredits).where(eq(userCredits.userId, userId)).limit(1);
   return result[0] || null;
 }
 
-export async function getOrCreateUserSubscription(userId: number): Promise<UserSubscription> {
-  let subscription = await getUserSubscription(userId);
-  if (subscription) {
-    return subscription;
-  }
-
-  await createUserSubscription({
-    userId,
-    plan: "free",
-    analysesThisMonth: 0,
-    monthlyLimit: 3,
-    lastResetDate: new Date(),
-  });
-
-  subscription = await getUserSubscription(userId);
-  if (!subscription) {
-    throw new Error("Failed to initialize user subscription");
-  }
-  return subscription;
-}
-
-
-export async function setUserSubscriptionPlan(
-  userId: number,
-  plan: "free" | "premium",
-  monthlyLimit?: number,
-): Promise<UserSubscription> {
+export async function createUserCredits(data: InsertUserCredits): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
-  const normalizedLimit =
-    monthlyLimit !== undefined ? monthlyLimit : plan === "premium" ? -1 : 3;
-
-  if (normalizedLimit === 0 || normalizedLimit < -1) {
-    throw new Error("monthlyLimit must be -1 or a positive integer");
-  }
-
-  const existing = await getUserSubscription(userId);
-  const now = new Date();
-
-  if (existing) {
-    await db
-      .update(userSubscriptions)
-      .set({
-        plan,
-        monthlyLimit: normalizedLimit,
-        lastResetDate: now,
-      })
-      .where(eq(userSubscriptions.userId, userId));
-  } else {
-    await createUserSubscription({
-      userId,
-      plan,
-      analysesThisMonth: 0,
-      monthlyLimit: normalizedLimit,
-      lastResetDate: now,
-    });
-  }
-
-  const subscription = await getUserSubscription(userId);
-  if (!subscription) {
-    throw new Error("Failed to set subscription plan");
-  }
-
-  return subscription;
-}
-export async function createUserSubscription(data: InsertUserSubscription): Promise<number> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  const result = await db.insert(userSubscriptions).values(data) as any;
+  const result = (await db.insert(userCredits).values(data)) as any;
   return Number(result.insertId);
 }
 
+export async function getOrCreateUserCredits(userId: number): Promise<UserCredits> {
+  let credits = await getUserCredits(userId);
+  if (credits) {
+    return credits;
+  }
+
+  await createUserCredits({
+    userId,
+    freeCreditsGranted: 3,
+    paidCreditsGranted: 0,
+    creditsConsumed: 0,
+  });
+
+  credits = await getUserCredits(userId);
+  if (!credits) {
+    throw new Error("Failed to initialize user credits");
+  }
+  return credits;
+}
+
+export type CreditUsageState = {
+  remainingCredits: number;
+  totalCredits: number;
+  creditsConsumed: number;
+};
+
+export async function getCreditUsageState(userId: number): Promise<CreditUsageState> {
+  const credits = await getOrCreateUserCredits(userId);
+  const totalCredits = credits.freeCreditsGranted + credits.paidCreditsGranted;
+  const remainingCredits = Math.max(0, totalCredits - credits.creditsConsumed);
+  return {
+    remainingCredits,
+    totalCredits,
+    creditsConsumed: credits.creditsConsumed,
+  };
+}
+
+export async function tryConsumeAnalysisCredit(userId: number): Promise<{
+  allowed: boolean;
+  remainingCredits: number;
+  creditConsumed: boolean;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await getOrCreateUserCredits(userId);
+
+  const consumeResult = (await db
+    .update(userCredits)
+    .set({ creditsConsumed: sql`${userCredits.creditsConsumed} + 1` })
+    .where(
+      and(
+        eq(userCredits.userId, userId),
+        lt(userCredits.creditsConsumed, sql`${userCredits.freeCreditsGranted} + ${userCredits.paidCreditsGranted}`),
+      ),
+    )) as any;
+
+  if (!consumeResult?.affectedRows) {
+    return {
+      allowed: false,
+      remainingCredits: 0,
+      creditConsumed: false,
+    };
+  }
+
+  const latest = await getOrCreateUserCredits(userId);
+  const totalCredits = latest.freeCreditsGranted + latest.paidCreditsGranted;
+  const remainingCredits = Math.max(0, totalCredits - latest.creditsConsumed);
+  return {
+    allowed: true,
+    remainingCredits,
+    creditConsumed: true,
+  };
+}
+
+export async function releaseAnalysisCredit(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .update(userCredits)
+    .set({ creditsConsumed: sql`${userCredits.creditsConsumed} - 1` })
+    .where(and(eq(userCredits.userId, userId), gt(userCredits.creditsConsumed, 0)));
+}
+
+// Legacy compatibility wrappers (deprecated)
 export type AnalysisQuotaResult = {
   allowed: boolean;
   remaining: number;
-  plan: "free" | "premium";
+  plan: "free";
   monthlyLimit: number;
   analysesThisMonth: number;
 };
 
 export async function consumeAnalysisQuota(userId: number): Promise<AnalysisQuotaResult> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const now = new Date();
-  const subscription = await getOrCreateUserSubscription(userId);
-
-  const lastReset = new Date(subscription.lastResetDate);
-  const isNewMonth = now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear();
-
-  if (isNewMonth) {
-    subscription.analysesThisMonth = 0;
-    subscription.lastResetDate = now;
-    await db
-      .update(userSubscriptions)
-      .set({ analysesThisMonth: 0, lastResetDate: now })
-      .where(eq(userSubscriptions.userId, userId));
-  }
-
-  const unlimited = subscription.monthlyLimit < 0 || subscription.plan === "premium";
-  if (!unlimited && subscription.analysesThisMonth >= subscription.monthlyLimit) {
-    return {
-      allowed: false,
-      remaining: 0,
-      plan: subscription.plan,
-      monthlyLimit: subscription.monthlyLimit,
-      analysesThisMonth: subscription.analysesThisMonth,
-    };
-  }
-
-  const nextCount = subscription.analysesThisMonth + 1;
-  await db
-    .update(userSubscriptions)
-    .set({ analysesThisMonth: nextCount })
-    .where(eq(userSubscriptions.userId, userId));
-
-  const remaining = unlimited ? -1 : Math.max(0, subscription.monthlyLimit - nextCount);
+  const stateBefore = await getCreditUsageState(userId);
+  const result = await tryConsumeAnalysisCredit(userId);
   return {
-    allowed: true,
-    remaining,
-    plan: subscription.plan,
-    monthlyLimit: subscription.monthlyLimit,
-    analysesThisMonth: nextCount,
+    allowed: result.allowed,
+    remaining: result.remainingCredits,
+    plan: "free",
+    monthlyLimit: stateBefore.totalCredits,
+    analysesThisMonth: stateBefore.creditsConsumed + (result.creditConsumed ? 1 : 0),
   };
 }
 
 export async function releaseAnalysisQuota(userId: number): Promise<void> {
+  await releaseAnalysisCredit(userId);
+}
+
+export async function addPaidCredits(userId: number, credits: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
-  const subscription = await getUserSubscription(userId);
-  if (!subscription) return;
-
-  const nextCount = Math.max(0, subscription.analysesThisMonth - 1);
-  if (nextCount === subscription.analysesThisMonth) return;
-
+  if (credits <= 0) return;
+  await getOrCreateUserCredits(userId);
   await db
-    .update(userSubscriptions)
-    .set({ analysesThisMonth: nextCount })
-    .where(eq(userSubscriptions.userId, userId));
+    .update(userCredits)
+    .set({ paidCreditsGranted: sql`${userCredits.paidCreditsGranted} + ${credits}` })
+    .where(eq(userCredits.userId, userId));
+}
+
+export async function getIapPurchaseByTransactionId(transactionId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(iapPurchases).where(eq(iapPurchases.transactionId, transactionId)).limit(1);
+  return rows[0] || null;
+}
+
+export async function createIapPurchase(data: InsertIapPurchase): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = (await db.insert(iapPurchases).values(data)) as any;
+  return Number(result.insertId);
+}
+
+export async function getUserSubscription(userId: number): Promise<{
+  userId: number;
+  plan: "free";
+  analysesThisMonth: number;
+  monthlyLimit: number;
+  lastResetDate: Date;
+} | null> {
+  const usage = await getUserCredits(userId);
+  if (!usage) return null;
+  return {
+    userId,
+    plan: "free",
+    analysesThisMonth: usage.creditsConsumed,
+    monthlyLimit: usage.freeCreditsGranted + usage.paidCreditsGranted,
+    lastResetDate: usage.updatedAt,
+  };
+}
+
+export async function getOrCreateUserSubscription(userId: number) {
+  const usage = await getOrCreateUserCredits(userId);
+  return {
+    userId,
+    plan: "free" as const,
+    analysesThisMonth: usage.creditsConsumed,
+    monthlyLimit: usage.freeCreditsGranted + usage.paidCreditsGranted,
+    lastResetDate: usage.updatedAt,
+  };
+}
+
+export async function setUserSubscriptionPlan(userId: number, _plan: "free" | "premium", monthlyLimit = 3) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getOrCreateUserCredits(userId);
+  await db
+    .update(userCredits)
+    .set({ freeCreditsGranted: Math.max(0, monthlyLimit), paidCreditsGranted: 0 })
+    .where(eq(userCredits.userId, userId));
+  return {
+    userId,
+    plan: "free" as const,
+    analysesThisMonth: existing.creditsConsumed,
+    monthlyLimit: Math.max(0, monthlyLimit),
+    lastResetDate: new Date(),
+  };
 }
 
 // ============================================

@@ -1,34 +1,145 @@
-import { ScrollView, Text, View, TouchableOpacity, TextInput, ActivityIndicator, Alert } from "react-native";
+import { ScrollView, Text, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, Linking } from "react-native";
 import { router } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { trpc } from "@/lib/trpc";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { getApiBaseUrl } from "@/constants/oauth";
+import {
+  endIapConnection,
+  finishIapTransaction,
+  getIapProducts,
+  initIapConnection,
+  purchaseErrorListener,
+  purchaseUpdatedListener,
+  getRestorePurchases,
+  IAP_PRODUCT_ID,
+  requestFiveCreditsPurchase,
+} from "@/lib/iap";
 
 export default function UploadScreen() {
   const colors = useColors();
-  const [uploadMethod, setUploadMethod] = useState<"pdf" | "text" | null>(null);
+  const [uploadMethod, setUploadMethod] = useState<"pdf" | "text" | "images" | null>(null);
   const [pdfFile, setPdfFile] = useState<{ name: string; uri: string; size: number } | null>(null);
+  const [imageFiles, setImageFiles] = useState<{ uri: string; mimeType?: string; fileName?: string; fileSize?: number }[]>([]);
   const [contractText, setContractText] = useState("");
   const [contractName, setContractName] = useState("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisMode, setAnalysisMode] = useState<"quick" | "deep">("quick");
+  const [analysisStage, setAnalysisStage] = useState<"uploading" | "processing" | "analyzing" | null>(null);
+  const [isPurchasing, setIsPurchasing] = useState(false);
 
-  const enqueueTextMutation = trpc.contracts.enqueueTextAsync.useMutation();
-  const enqueuePDFMutation = trpc.contracts.enqueuePDFAsync.useMutation();
+  const enqueueDocumentMutation = trpc.contracts.enqueueDocumentAsync.useMutation();
   const cancelJobMutation = trpc.contracts.cancelJob.useMutation();
   const trpcUtils = trpc.useUtils();
   const activeJobIdRef = useRef<string | null>(null);
-  const { data: subscription } = trpc.contracts.subscriptionStatus.useQuery();
+  const handledTransactionsRef = useRef<Set<string>>(new Set());
+  const { data: usage } = trpc.contracts.usageStatus.useQuery();
+
+  const validateReceiptWithBackend = async (receipt: string, productId: string) => {
+    const baseUrl = getApiBaseUrl();
+    const response = await fetch(`${baseUrl}/api/iap/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ receipt, productId }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || "Purchase validation failed");
+    }
+    await trpcUtils.contracts.usageStatus.invalidate();
+    return payload as { success: true; creditsAdded: number; remainingCredits: number; duplicate?: boolean };
+  };
+
+  const handleBuyFiveCredits = async () => {
+    try {
+      setIsPurchasing(true);
+      await getIapProducts();
+      await requestFiveCreditsPurchase();
+    } catch (error: any) {
+      if (String(error?.message || "").toLowerCase().includes("cancel")) {
+        Alert.alert("Purchase Cancelled", "No charges were made.");
+      } else {
+        Alert.alert("Purchase Failed", error?.message || "Unable to complete purchase.");
+      }
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
+
+  const handleRestorePurchases = async () => {
+    try {
+      setIsPurchasing(true);
+      const purchases = await getRestorePurchases();
+      let latestRemaining = usage?.remainingCredits ?? 0;
+      for (const purchase of purchases || []) {
+        const receipt = (purchase as any)?.transactionReceipt || (purchase as any)?.transactionReceiptData;
+        if (!receipt) continue;
+        const result = await validateReceiptWithBackend(receipt, IAP_PRODUCT_ID);
+        await finishIapTransaction(purchase as any).catch(() => {});
+        latestRemaining = result.remainingCredits;
+      }
+      Alert.alert("Restore Complete", `You now have ${latestRemaining} analyses available.`);
+    } catch (error: any) {
+      Alert.alert("Restore Failed", error?.message || "Unable to restore purchases.");
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
+
+  useEffect(() => {
+    let updatedSub: { remove?: () => void } | null = null;
+    let errorSub: { remove?: () => void } | null = null;
+    let mounted = true;
+
+    (async () => {
+      try {
+        await initIapConnection();
+        if (!mounted) return;
+        updatedSub = purchaseUpdatedListener(async (purchase: any) => {
+          const txId = String(purchase?.transactionId || purchase?.transactionIdentifier || "");
+          if (txId && handledTransactionsRef.current.has(txId)) return;
+          if (txId) handledTransactionsRef.current.add(txId);
+
+          try {
+            const receipt = purchase?.transactionReceipt || purchase?.transactionReceiptData;
+            if (!receipt) return;
+            const validated = await validateReceiptWithBackend(receipt, IAP_PRODUCT_ID);
+            await finishIapTransaction(purchase);
+            Alert.alert("Purchase Successful", `You now have ${validated.remainingCredits} analyses available.`);
+          } catch (error: any) {
+            Alert.alert("Purchase Validation Failed", error?.message || "Unable to validate purchase.");
+          } finally {
+            setIsPurchasing(false);
+          }
+        });
+
+        errorSub = purchaseErrorListener((error: any) => {
+          setIsPurchasing(false);
+          Alert.alert("Purchase Failed", error?.message || "Unable to complete purchase.");
+        });
+      } catch (error: any) {
+        Alert.alert("IAP Setup Error", error?.message || "In-app purchases are not configured.");
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      updatedSub?.remove?.();
+      errorSub?.remove?.();
+      void endIapConnection();
+    };
+  }, []);
 
   const waitForJobCompletion = async (jobId: string) => {
     activeJobIdRef.current = jobId;
     const maxAttempts = 180; // ~6 minutes @ 2s
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const status = await trpcUtils.contracts.getJobStatus.fetch({ jobId });
+      if (status.status === "pending") setAnalysisStage("processing");
+      if (status.status === "processing") setAnalysisStage("analyzing");
       if (status.status === "completed" && status.analysisId) {
         activeJobIdRef.current = null;
         return status.analysisId;
@@ -45,6 +156,34 @@ export default function UploadScreen() {
     }
     activeJobIdRef.current = null;
     throw new Error("Analysis timed out. Please try again.");
+  };
+
+  const handlePickImages = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ["image/*"],
+      multiple: true,
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled) return;
+    setImageFiles(
+      result.assets.map((asset) => ({
+        uri: asset.uri,
+        mimeType: asset.mimeType,
+        fileName: asset.name,
+        fileSize: asset.size,
+      })),
+    );
+    setUploadMethod("images");
+    if (!contractName.trim()) setContractName("Photo Contract");
+  };
+
+  const handleCaptureImage = async () => {
+    try {
+      await Linking.openURL("camera://");
+      Alert.alert("Capture Photo", "Take document photos in your camera app, then tap 'Select Document Photos' to import them.");
+    } catch {
+      Alert.alert("Camera", "Please use your camera app to capture photos, then select them from the gallery.");
+    }
   };
 
   const handlePickPDF = async () => {
@@ -100,19 +239,18 @@ export default function UploadScreen() {
       Alert.alert("Missing File", "Please select a PDF file");
       return;
     }
-
-    if (analysisMode === "deep" && subscription?.plan !== "premium") {
-      Alert.alert("Premium Feature", "Deep analysis is available on Premium plan.");
+    if (uploadMethod === "images" && imageFiles.length === 0) {
+      Alert.alert("Missing Photos", "Please select or capture at least one photo");
       return;
     }
 
-    setIsAnalyzing(true);
+    setAnalysisStage("uploading");
 
     try {
       if (uploadMethod === "text") {
-        const job = await enqueueTextMutation.mutateAsync({
-          mode: analysisMode,
+        const job = await enqueueDocumentMutation.mutateAsync({
           name: contractName.trim(),
+          inputType: "text",
           text: contractText.trim(),
         });
         const analysisId = await waitForJobCompletion(job.jobId);
@@ -125,11 +263,32 @@ export default function UploadScreen() {
           encoding: FileSystem.EncodingType.Base64,
         });
 
-        const job = await enqueuePDFMutation.mutateAsync({
-          mode: analysisMode,
+        const job = await enqueueDocumentMutation.mutateAsync({
           name: contractName.trim(),
-          pdfBase64: pdfBase64,
-          fileSize: pdfFile.size,
+          inputType: "pdf",
+          pdfBase64,
+          pdfFileSize: pdfFile.size,
+        });
+        const analysisId = await waitForJobCompletion(job.jobId);
+        
+        // Navigate to analysis screen
+        router.replace(`/analysis/${analysisId}` as any);
+      } else if (uploadMethod === "images") {
+        const images = [];
+        for (const image of imageFiles) {
+          const base64 = await FileSystem.readAsStringAsync(image.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          images.push({
+            base64,
+            mimeType: image.mimeType || "image/jpeg",
+            size: image.fileSize || 0,
+          });
+        }
+        const job = await enqueueDocumentMutation.mutateAsync({
+          name: contractName.trim(),
+          inputType: "images",
+          images,
         });
         const analysisId = await waitForJobCompletion(job.jobId);
 
@@ -140,7 +299,7 @@ export default function UploadScreen() {
       activeJobIdRef.current = null;
       console.error("Analysis error:", error);
       Alert.alert("Analysis Failed", error.message || "Failed to analyze contract. Please try again.");
-      setIsAnalyzing(false);
+      setAnalysisStage(null);
     }
   };
 
@@ -156,22 +315,26 @@ export default function UploadScreen() {
       console.warn("Cancel job failed:", error);
     } finally {
       activeJobIdRef.current = null;
-      setIsAnalyzing(false);
+      setAnalysisStage(null);
     }
   };
 
   // Processing Screen
-  if (isAnalyzing) {
+  if (analysisStage) {
     return (
       <ScreenContainer className="p-6 items-center justify-center">
         <ActivityIndicator size="large" color={colors.primary} />
         <Text className="text-2xl font-bold text-foreground mt-6">Analyzing Contract...</Text>
         <Text className="text-base text-muted mt-3 text-center max-w-xs">
-          This may take 10-30 seconds
+          {analysisStage === "uploading"
+            ? "Uploading..."
+            : analysisStage === "processing"
+              ? "Processing..."
+              : "Analyzing..."}
         </Text>
         <View className="mt-8 bg-surface rounded-xl p-5 border border-border max-w-sm">
           <Text className="text-sm text-muted text-center leading-relaxed">
-            Our AI is reading your contract and identifying key terms, obligations, risks, and red flags.
+            Our AI is reading only the first 10 pages and identifying key terms, obligations, risks, and red flags.
           </Text>
         </View>
         <TouchableOpacity
@@ -212,8 +375,8 @@ export default function UploadScreen() {
                 <View className="items-center gap-3">
                   <IconSymbol size={48} name="doc.text.fill" color={colors.primary} />
                   <Text className="text-lg font-semibold text-foreground">Upload PDF File</Text>
-                  <Text className="text-sm text-muted text-center">Choose a PDF contract from your device</Text>
-                  <Text className="text-xs text-muted">Max 10MB</Text>
+                <Text className="text-sm text-muted text-center">Choose a PDF contract from your device</Text>
+                  <Text className="text-xs text-muted">Max 10MB • first 10 pages analyzed</Text>
                 </View>
               </TouchableOpacity>
 
@@ -225,7 +388,29 @@ export default function UploadScreen() {
                 <View className="items-center gap-3">
                   <IconSymbol size={48} name="doc.text.fill" color={colors.primary} />
                   <Text className="text-lg font-semibold text-foreground">Paste Contract Text</Text>
-                  <Text className="text-sm text-muted text-center">Copy and paste the contract text directly</Text>
+                  <Text className="text-sm text-muted text-center">Copy and paste the contract text directly (first section only is analyzed)</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="bg-surface rounded-2xl p-6 border-2 border-border"
+                style={{ opacity: 1 }}
+                onPress={handlePickImages}
+              >
+                <View className="items-center gap-3">
+                  <IconSymbol size={48} name="photo.on.rectangle.angled" color={colors.primary} />
+                  <Text className="text-lg font-semibold text-foreground">Select Document Photos</Text>
+                  <Text className="text-sm text-muted text-center">Choose multiple photos from gallery (one document)</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="bg-surface rounded-2xl p-6 border-2 border-border"
+                style={{ opacity: 1 }}
+                onPress={handleCaptureImage}
+              >
+                <View className="items-center gap-3">
+                  <IconSymbol size={48} name="camera.fill" color={colors.primary} />
+                  <Text className="text-lg font-semibold text-foreground">Capture with Camera</Text>
+                  <Text className="text-sm text-muted text-center">Take one or more photos (one document)</Text>
                 </View>
               </TouchableOpacity>
             </View>
@@ -262,6 +447,26 @@ export default function UploadScreen() {
                   value={contractName}
                   onChangeText={setContractName}
                 />
+              </View>
+            </View>
+          )}
+          {uploadMethod === "images" && (
+            <View className="gap-4">
+              <View className="bg-surface rounded-2xl p-5 border border-border">
+                <Text className="text-base font-semibold text-foreground">
+                  {imageFiles.length} photo(s) selected
+                </Text>
+                <Text className="text-sm text-muted mt-1">
+                  Photos are merged in order into one document for analysis.
+                </Text>
+              </View>
+              <View className="flex-row gap-3">
+                <TouchableOpacity className="flex-1 bg-surface rounded-xl p-3 border border-border" onPress={handlePickImages}>
+                  <Text className="text-center font-semibold" style={{ color: colors.primary }}>Reselect</Text>
+                </TouchableOpacity>
+                <TouchableOpacity className="flex-1 bg-surface rounded-xl p-3 border border-border" onPress={handleCaptureImage}>
+                  <Text className="text-center font-semibold" style={{ color: colors.primary }}>Add Camera Page</Text>
+                </TouchableOpacity>
               </View>
             </View>
           )}
@@ -321,56 +526,36 @@ export default function UploadScreen() {
                 <IconSymbol size={20} name="exclamationmark.triangle.fill" color={colors.warning} />
                 <Text className="flex-1 text-xs text-muted leading-relaxed">
                   This analysis is for informational purposes only and does not constitute legal
-                  advice. Please consult with a qualified attorney for legal guidance.
+                  advice. Only the first 10 pages (or equivalent first text section) are analyzed.
+                  New users get 3 free analyses.
                 </Text>
               </View>
             </View>
           )}
-
-          {/* Analysis Mode Selection */}
-          {uploadMethod && (
-            <View className="gap-3">
-              <Text className="text-base font-semibold text-foreground">Analysis Mode</Text>
-              {subscription && (
-                <Text className="text-xs text-muted">
-                  Plan: {subscription.plan === "premium" ? "Premium" : "Free"} ·
-                  {subscription.remaining === -1
-                    ? " Unlimited analyses"
-                    : ` ${subscription.remaining} analyses left this month`}
+          {uploadMethod && usage && (
+            <View className="bg-surface rounded-xl p-4 border border-border">
+              <Text className="text-sm text-muted">
+                Remaining credits: <Text className="text-foreground font-semibold">{usage.remainingCredits}</Text>.{" "}
+                New users get 3 free analyses. Additional +5 credit packs will be available in V1.
+              </Text>
+              <TouchableOpacity
+                className="mt-3 bg-primary px-4 py-3 rounded-xl"
+                style={{ opacity: isPurchasing ? 0.6 : 1 }}
+                disabled={isPurchasing}
+                onPress={handleBuyFiveCredits}
+              >
+                <Text className="text-white font-semibold text-center">
+                  {isPurchasing ? "Processing Purchase..." : "Buy 5 analyses for $1.99"}
                 </Text>
-              )}
-              <View className="flex-row gap-3">
-                <TouchableOpacity
-                  className={`flex-1 p-4 rounded-xl border-2 ${analysisMode === "quick" ? "border-primary bg-primary/10" : "border-border bg-surface"}`}
-                  style={{ opacity: 1 }}
-                  onPress={() => setAnalysisMode("quick")}
-                >
-                  <Text className={`text-base font-semibold text-center ${analysisMode === "quick" ? "text-primary" : "text-foreground"}`}>
-                    Quick
-                  </Text>
-                  <Text className="text-xs text-muted text-center mt-1">
-                    Faster, concise
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className={`flex-1 p-4 rounded-xl border-2 ${analysisMode === "deep" ? "border-primary bg-primary/10" : "border-border bg-surface"}`}
-                  style={{ opacity: subscription?.plan !== "premium" ? 0.5 : 1 }}
-                  onPress={() => {
-                    if (subscription?.plan !== "premium") {
-                      Alert.alert("Premium Feature", "Deep analysis requires Premium plan.");
-                      return;
-                    }
-                    setAnalysisMode("deep");
-                  }}
-                >
-                  <Text className={`text-base font-semibold text-center ${analysisMode === "deep" ? "text-primary" : "text-foreground"}`}>
-                    Deep
-                  </Text>
-                  <Text className="text-xs text-muted text-center mt-1">
-                    More detailed
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="mt-2 px-4 py-3 rounded-xl border border-border"
+                style={{ opacity: isPurchasing ? 0.6 : 1 }}
+                disabled={isPurchasing}
+                onPress={handleRestorePurchases}
+              >
+                <Text className="text-foreground font-semibold text-center">Restore Purchases</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -380,10 +565,10 @@ export default function UploadScreen() {
               className="bg-primary px-6 py-4 rounded-2xl"
               style={{ opacity: 1 }}
               onPress={handleAnalyze}
-              disabled={isAnalyzing}
+              disabled={!!analysisStage}
             >
               <Text className="text-white font-bold text-lg text-center">
-                {isAnalyzing ? "Analyzing..." : "Analyze Contract"}
+                {analysisStage ? "Analyzing..." : "Analyze Contract"}
               </Text>
             </TouchableOpacity>
           )}

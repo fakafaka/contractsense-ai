@@ -161,6 +161,8 @@ export default function AnalysisScreen() {
                 <Text className="text-sm font-semibold text-foreground mb-2">Important Disclaimer</Text>
                 <Text className="text-sm text-muted leading-relaxed">
                   This analysis is for informational purposes only and does not constitute legal advice.
+                  Only the first 10 pages of the provided document (or equivalent initial text section)
+                  were analyzed.
                   Please consult with a qualified attorney for legal guidance regarding this contract.
                 </Text>
               </View>
