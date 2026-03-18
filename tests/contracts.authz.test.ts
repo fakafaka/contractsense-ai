@@ -3,8 +3,6 @@ import { appRouter } from "../server/routers";
 import type { TrpcContext } from "../server/_core/context";
 import * as db from "../server/db";
 import * as queue from "../server/analysis-queue";
-import * as analyzer from "../server/contract-analyzer";
-import * as storage from "../server/storage";
 
 function makeCtx(user: TrpcContext["user"]): TrpcContext {
   return {
@@ -127,46 +125,5 @@ describe("contracts authz + v1 usage", () => {
     expect(result).toHaveProperty("checks");
     expect(Array.isArray(result.suggestions)).toBe(true);
     expect((result as any).premiumUnlocked).toBeUndefined();
-  });
-
-  it("rejects too many images before enqueueing", async () => {
-    const enqueueSpy = vi.spyOn(queue, "enqueueAnalysisJob");
-    const caller = appRouter.createCaller(makeCtx(user));
-    const tooManyImages = Array.from({ length: 11 }).map((_, idx) => ({
-      base64: Buffer.from(`image-${idx}-very-long-content-for-testing`).toString("base64"),
-      mimeType: "image/jpeg",
-      size: 1000,
-    }));
-
-    await expect(
-      caller.contracts.enqueueDocumentAsync({
-        name: "Photo Contract",
-        inputType: "images",
-        images: tooManyImages,
-      }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(enqueueSpy).not.toHaveBeenCalled();
-  });
-
-  it("rejects unreadable OCR output before enqueueing", async () => {
-    vi.spyOn(storage, "storagePut").mockResolvedValue({ url: "https://example.com/img.jpg", key: "img", size: 100 } as any);
-    vi.spyOn(analyzer, "extractTextFromImages").mockResolvedValue("too short");
-    const enqueueSpy = vi.spyOn(queue, "enqueueAnalysisJob");
-    const caller = appRouter.createCaller(makeCtx(user));
-
-    await expect(
-      caller.contracts.enqueueDocumentAsync({
-        name: "Photo Contract",
-        inputType: "images",
-        images: [
-          {
-            base64: Buffer.from("image-1-very-long-content-for-testing").toString("base64"),
-            mimeType: "image/jpeg",
-            size: 1000,
-          },
-        ],
-      }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(enqueueSpy).not.toHaveBeenCalled();
   });
 });

@@ -67,7 +67,7 @@
     "react-native-svg": "15.12.1",
     "react-native-web": "~0.21.2",
     "react-native-worklets": "0.5.1",
-    "react-native-iap": "14.7.17",
+    "react-native-iap": "^13.1.0",
     "superjson": "^1.13.3",
     "tailwind-merge": "^2.6.0",
     "zod": "^4.2.1"

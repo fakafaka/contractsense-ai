@@ -42,14 +42,10 @@ export function computeContentHash(text: string): string {
   return crypto.createHash("sha256").update(normalized, "utf8").digest("hex");
 }
 
-export function buildAnalysisCacheKey(
-  contentType: "text" | "pdf" | "images",
-  sourceText: string,
-  sourceIdentity = "",
-): string {
+export function buildAnalysisCacheKey(contentType: "text" | "pdf" | "images", sourceText: string): string {
   const capped = capContractTextForV1(sourceText);
   const normalizedHash = computeContentHash(capped);
-  return computeContentHash(`${ANALYSIS_CACHE_VERSION}:${contentType}:${sourceIdentity}:${normalizedHash}`);
+  return computeContentHash(`${ANALYSIS_CACHE_VERSION}:${contentType}:${normalizedHash}`);
 }
 
 export function getAnalysisScopeMetadata(text: string): AnalysisScopeMetadata {
@@ -246,9 +242,9 @@ export async function extractTextFromImages(imageUrls: string[]): Promise<string
     return capContractTextForV1(text);
   } catch (error: any) {
     if (error?.message === "OCR_EMPTY") {
-      throw new Error("We couldn't read the document. Please try clearer photos.");
+      throw new Error("We couldn't read the document. Please try a clearer photo or different file.");
     }
-    throw new Error("We couldn't read the document. Please try clearer photos.");
+    throw new Error("Failed to read images. Please try clearer photos or upload a PDF.");
   }
 }
 
