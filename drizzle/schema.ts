@@ -84,6 +84,15 @@ export const userCredits = mysqlTable("userCredits", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+// Apple IAP purchases for idempotent consumable credit grants
+export const iapPurchases = mysqlTable("iapPurchases", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  transactionId: varchar("transactionId", { length: 128 }).notNull().unique(),
+  productId: varchar("productId", { length: 128 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export type Contract = typeof contracts.$inferSelect;
 export type InsertContract = typeof contracts.$inferInsert;
 
@@ -94,3 +103,5 @@ export type UserSubscription = typeof userSubscriptions.$inferSelect;
 export type InsertUserSubscription = typeof userSubscriptions.$inferInsert;
 export type UserCredits = typeof userCredits.$inferSelect;
 export type InsertUserCredits = typeof userCredits.$inferInsert;
+export type IapPurchase = typeof iapPurchases.$inferSelect;
+export type InsertIapPurchase = typeof iapPurchases.$inferInsert;

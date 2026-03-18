@@ -6,12 +6,15 @@ import {
   contracts,
   analyses,
   userCredits,
+  iapPurchases,
   type Contract,
   type Analysis,
   type InsertContract,
   type InsertAnalysis,
   type UserCredits,
-  type InsertUserCredits
+  type InsertUserCredits,
+  type IapPurchase,
+  type InsertIapPurchase,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -417,6 +420,43 @@ export async function releaseAnalysisCredit(userId: number): Promise<void> {
     .update(userCredits)
     .set({ creditsConsumed: sql`${userCredits.creditsConsumed} - 1` })
     .where(and(eq(userCredits.userId, userId), gt(userCredits.creditsConsumed, 0)));
+}
+
+export async function addPaidCredits(userId: number, creditsToAdd: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (!Number.isFinite(creditsToAdd) || creditsToAdd <= 0) return;
+
+  await getOrCreateUserCredits(userId);
+
+  await db
+    .update(userCredits)
+    .set({ paidCreditsGranted: sql`${userCredits.paidCreditsGranted} + ${Math.floor(creditsToAdd)}` })
+    .where(eq(userCredits.userId, userId));
+}
+
+export async function getIapPurchaseByTransactionId(transactionId: string): Promise<IapPurchase | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db
+    .select()
+    .from(iapPurchases)
+    .where(eq(iapPurchases.transactionId, transactionId))
+    .limit(1);
+  return result[0] || null;
+}
+
+export async function createIapPurchase(data: InsertIapPurchase): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = (await db.insert(iapPurchases).values(data)) as any;
+  const id = Number((result as any)?.insertId ?? (result as any)?.[0]?.insertId ?? (result as any)?.lastInsertRowid);
+  if (!Number.isFinite(id) || id <= 0) {
+    throw new Error("createIapPurchase failed: missing insert id");
+  }
+  return id;
 }
 
 // Legacy compatibility wrappers (deprecated)
