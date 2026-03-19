@@ -14,6 +14,7 @@ import {
   IAP_PRODUCT_ID,
   validateAppleConsumableReceipt,
 } from "../iap";
+import { resolveEffectiveIdentity } from "./identity";
 
 async function startServer() {
   const app = express();
@@ -121,8 +122,13 @@ async function startServer() {
   app.post("/api/iap/validate", async (req, res) => {
     try {
       const ctx = await createContext({ req, res, info: {} as any });
-      if (!ctx.user) {
-        res.status(401).json({ success: false, error: "Unauthorized" });
+      const identity = await resolveEffectiveIdentity(req, ctx.user);
+      const userId = identity.effectiveUserId;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: "Unauthorized: missing auth session or valid deviceId",
+        });
         return;
       }
 
@@ -133,7 +139,7 @@ async function startServer() {
       const validated = await validateAppleConsumableReceipt(receipt, expectedProductId);
       const existing = await db.getIapPurchaseByTransactionId(validated.transactionId);
       if (existing) {
-        const usage = await db.getCreditUsageState(ctx.user.id);
+        const usage = await db.getCreditUsageState(userId);
         res.json({
           success: true,
           creditsAdded: 0,
@@ -144,16 +150,12 @@ async function startServer() {
       }
 
       await db.createIapPurchase({
-        userId: String(ctx.user.id),
+        userId,
         transactionId: validated.transactionId,
-        originalTransactionId: null,
         productId: validated.productId,
-        environment: process.env.NODE_ENV === "production" ? "Production" : "Sandbox",
-        purchaseDateMs: null,
-        rawPayload: receipt,
       });
-      await db.addPaidCredits(String(ctx.user.id), IAP_CREDITS_PER_PURCHASE);
-      const usage = await db.getCreditUsageState(ctx.user.id);
+      await db.addPaidCredits(userId, IAP_CREDITS_PER_PURCHASE);
+      const usage = await db.getCreditUsageState(userId);
       res.json({
         success: true,
         creditsAdded: IAP_CREDITS_PER_PURCHASE,
