@@ -83,6 +83,13 @@ export const userCredits = mysqlTable("userCredits", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+export const iapPurchases = mysqlTable("iapPurchases", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  transactionId: varchar("transactionId", { length: 128 }).notNull().unique(),
+  productId: varchar("productId", { length: 128 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
 
 // Apple IAP purchases for idempotent consumable credit grants
 export const iapPurchases = mysqlTable("iapPurchases", {

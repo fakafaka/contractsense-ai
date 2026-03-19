@@ -95,7 +95,11 @@ const config: ExpoConfig = {
   extra: {
     privacyPolicyUrl: env.privacyPolicyUrl,
     termsOfUseUrl: env.termsOfUseUrl,
+    eas: {
+    projectId: "04c12c15-7159-40fb-aa9d-dc891f40c631",
   },
+ },
+
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
