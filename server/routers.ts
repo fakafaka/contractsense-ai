@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { protectedProcedure, publicProcedure, router, userOrDeviceProcedure } from "./_core/trpc";
 import * as db from "./db";
 import {
   evaluateAnalysisQuality,
@@ -133,7 +133,7 @@ export const appRouter = router({
   }),
 
   contracts: router({
-    enqueueDocumentAsync: protectedProcedure
+    enqueueDocumentAsync: userOrDeviceProcedure
       .input(
         z.object({
           name: z.string().min(1).max(255),
@@ -154,7 +154,7 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         return enqueueUnifiedDocument({
-          userId: ctx.user.id,
+          userId: ctx.effectiveUserId,
           name: input.name,
           inputType: input.inputType,
           text: input.text,
@@ -164,8 +164,8 @@ export const appRouter = router({
         });
       }),
 
-    usageStatus: protectedProcedure.query(async ({ ctx }) => {
-      const usage = await db.getCreditUsageState(ctx.user.id);
+    usageStatus: userOrDeviceProcedure.query(async ({ ctx }) => {
+      const usage = await db.getCreditUsageState(ctx.effectiveUserId);
       return usage;
     }),
 
@@ -240,15 +240,15 @@ export const appRouter = router({
         });
       }),
 
-    getJobStatus: protectedProcedure
+    getJobStatus: userOrDeviceProcedure
       .input(z.object({ jobId: z.string().min(1) }))
       .query(async ({ input, ctx }) => {
-        const job = getAnalysisJob(input.jobId, ctx.user.id);
+        const job = getAnalysisJob(input.jobId, ctx.effectiveUserId);
         if (!job) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
         }
         if (job.remainingCredits === undefined) {
-          const usage = await db.getCreditUsageState(ctx.user.id);
+          const usage = await db.getCreditUsageState(ctx.effectiveUserId);
           return {
             ...job,
             remainingCredits: usage.remainingCredits,
@@ -259,8 +259,8 @@ export const appRouter = router({
         return job;
       }),
 
-    subscriptionStatus: protectedProcedure.query(async ({ ctx }) => {
-      const usage = await db.getCreditUsageState(ctx.user.id);
+    subscriptionStatus: userOrDeviceProcedure.query(async ({ ctx }) => {
+      const usage = await db.getCreditUsageState(ctx.effectiveUserId);
       return {
         plan: "credits" as const,
         analysesThisMonth: usage.creditsConsumed,
@@ -296,10 +296,10 @@ export const appRouter = router({
         return subscription;
       }),
 
-    cancelJob: protectedProcedure
+    cancelJob: userOrDeviceProcedure
       .input(z.object({ jobId: z.string().min(1) }))
       .mutation(({ input, ctx }) => {
-        const job = cancelAnalysisJob(input.jobId, ctx.user.id);
+        const job = cancelAnalysisJob(input.jobId, ctx.effectiveUserId);
         if (!job) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
         }

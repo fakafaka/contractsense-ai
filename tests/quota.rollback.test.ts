@@ -7,6 +7,9 @@ import * as queue from "../server/analysis-queue";
 function makeCtx(user: TrpcContext["user"]): TrpcContext {
   return {
     user,
+    deviceId: user ? null : "dev-test-12345678",
+    effectiveUserId: user?.id ?? 999,
+    identityType: user ? "authenticated" : "anonymous_device",
     req: { headers: {}, socket: { remoteAddress: "127.0.0.1" } } as any,
     res: { clearCookie: () => {} } as any,
   };
