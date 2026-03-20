@@ -369,14 +369,14 @@ export const appRouter = router({
         };
       }),
 
-    getAnalysis: protectedProcedure
+    getAnalysis: userOrDeviceProcedure
       .input(z.object({ analysisId: z.number() }))
       .query(async ({ input, ctx }) => {
         const analysis = await db.getAnalysisById(input.analysisId);
         if (!analysis) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Analysis not found" });
         }
-        if (analysis.userId !== ctx.user.id) {
+        if (analysis.userId !== ctx.effectiveUserId) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Forbidden" });
         }
 
