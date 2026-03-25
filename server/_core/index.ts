@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
+import path from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -15,6 +16,7 @@ import {
   validateAppleConsumableReceipt,
 } from "../iap";
 import { resolveEffectiveIdentity } from "./identity";
+import { getUploadsRootDir, LOCAL_UPLOADS_PUBLIC_PATH } from "../storage";
 
 async function startServer() {
   const app = express();
@@ -28,9 +30,14 @@ async function startServer() {
     .filter(Boolean);
 
   const isProduction = process.env.NODE_ENV === "production";
+  const databaseUrl = process.env.DATABASE_URL?.trim();
 
   if (isProduction && allowedOrigins.length === 0) {
     throw new Error("CORS_ORIGINS must be configured in production");
+  }
+
+  if (isProduction && !databaseUrl) {
+    throw new Error("DATABASE_URL must be configured in production");
   }
 
   if (isProduction && allowedOrigins.includes("*")) {
@@ -78,6 +85,10 @@ async function startServer() {
 
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  app.use(
+    LOCAL_UPLOADS_PUBLIC_PATH,
+    express.static(path.resolve(getUploadsRootDir()), { fallthrough: false }),
+  );
 
   registerOAuthRoutes(app);
 
