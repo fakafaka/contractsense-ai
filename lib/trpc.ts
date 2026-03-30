@@ -21,6 +21,12 @@ export const trpc = createTRPCReact<AppRouter>();
  */
 export function createTRPCClient() {
   const trpcUrl = new URL("/api/trpc", getApiBaseUrl()).toString();
+  // Identity lock for this client instance:
+  // Resolve token + device id once so userOrDevice endpoints don't silently
+  // switch between anonymous-device and authenticated identities mid-session.
+  const identityPromise = Promise.all([Auth.getSessionToken(), getOrCreateDeviceId()]).then(
+    ([token, deviceId]) => ({ token, deviceId }),
+  );
 
   return trpc.createClient({
     links: [
@@ -29,8 +35,7 @@ export function createTRPCClient() {
         // tRPC v11: transformer MUST be inside httpBatchLink, not at root
         transformer: superjson,
         async headers() {
-          const token = await Auth.getSessionToken();
-          const deviceId = await getOrCreateDeviceId();
+          const { token, deviceId } = await identityPromise;
           return {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
             "x-device-id": deviceId,
