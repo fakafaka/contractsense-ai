@@ -19,7 +19,8 @@
     "qr": "node scripts/generate_qr.mjs",
     "eval:quality": "tsx scripts/run_quality_eval.ts",
     "appstore:check": "node scripts/app_store_readiness_check.mjs",
-    "expo:start": "cross-env EXPO_USE_METRO_WORKSPACE_ROOT=1 EXPO_NO_DEPENDENCY_VALIDATION=1 expo start --tunnel --clear --port ${EXPO_PORT:-8081}"
+    "expo:start": "cross-env EXPO_USE_METRO_WORKSPACE_ROOT=1 EXPO_NO_DEPENDENCY_VALIDATION=1 expo start --tunnel --clear --port ${EXPO_PORT:-8081}",
+    "reconcile:anon": "node scripts/reconcile-anonymous-users.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
