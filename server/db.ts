@@ -245,18 +245,18 @@ export async function deleteUserData(userId: number): Promise<{ analysesDeleted:
     const analysesByContract = (await db
       .delete(analyses)
       .where(inArray(analyses.contractId, contractIds))) as any;
-    analysesDeleted += analysesByContract?.affectedRows || 0;
+    analysesDeleted += analysesByContract?.[0]?.affectedRows || 0;
   }
 
   // Keep userId-based deletion as a fallback for rows without valid contract linkage.
   const analysesByUser = (await db.delete(analyses).where(eq(analyses.userId, userId))) as any;
-  analysesDeleted += analysesByUser?.affectedRows || 0;
+  analysesDeleted += analysesByUser?.[0]?.affectedRows || 0;
 
   const contractsResult = (await db.delete(contracts).where(eq(contracts.userId, userId))) as any;
 
   return {
     analysesDeleted,
-    contractsDeleted: contractsResult?.affectedRows || 0,
+    contractsDeleted: contractsResult?.[0]?.affectedRows || 0,
   };
 }
 
@@ -308,7 +308,7 @@ export async function deleteOldAnalyses(): Promise<number> {
   
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const result = await db.delete(analyses).where(lt(analyses.createdAt, cutoff)) as any;
-  return result.affectedRows || 0;
+  return result?.[0]?.affectedRows || 0;
 }
 
 export async function getAllAnalyses(): Promise<Analysis[]> {
@@ -394,7 +394,7 @@ export async function tryConsumeAnalysisCredit(userId: number): Promise<{
       ),
     )) as any;
 
-  if (!consumeResult?.affectedRows) {
+  if (!consumeResult?.[0]?.affectedRows) {
     return {
       allowed: false,
       remainingCredits: 0,
