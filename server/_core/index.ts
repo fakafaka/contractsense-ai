@@ -91,6 +91,10 @@ async function startServer() {
     express.static(path.resolve(getUploadsRootDir()), { fallthrough: false }),
   );
 
+  // Serve static files from the public/ directory at the root path.
+  // e.g. public/privacy-policy.html → /privacy-policy.html
+  app.use(express.static(path.resolve("public")));
+
   registerOAuthRoutes(app);
 
   app.get("/api/health", (_req, res) => {
@@ -180,6 +184,30 @@ async function startServer() {
       });
     }
   });
+  // Dev-only endpoint: add credits to the calling device for testing.
+  // Returns 404 in production — never exposed to real users.
+  app.post("/api/dev/add-credits", async (req, res) => {
+    if (process.env.NODE_ENV === "production") {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const ctx = await createContext({ req, res, info: {} as any });
+      const identity = await resolveEffectiveIdentity(req, ctx.user);
+      const userId = identity.effectiveUserId;
+      if (!userId) {
+        res.status(401).json({ success: false, error: "No identity — send x-device-id header" });
+        return;
+      }
+      const credits = Math.min(100, Math.max(1, Number(req.body?.credits || 5)));
+      await db.addPaidCredits(userId, credits);
+      const usage = await db.getCreditUsageState(userId);
+      res.json({ success: true, creditsAdded: credits, ...usage });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error?.message || "Failed to add credits" });
+    }
+  });
+
   app.use(
     "/api/trpc",
     createExpressMiddleware({
