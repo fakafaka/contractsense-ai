@@ -15,7 +15,7 @@ export default function WelcomeScreen() {
             ContractSense AI
           </Text>
           <Text className="text-xl text-muted text-center">
-            Understand contracts in plain English (first 10 pages only)
+            Understand contracts in plain English
           </Text>
         </View>
 
