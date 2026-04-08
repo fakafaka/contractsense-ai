@@ -455,7 +455,7 @@ export default function UploadScreen() {
                 <View className="items-center gap-3">
                   <IconSymbol size={48} name="doc.text.fill" color={colors.primary} />
                   <Text className="text-lg font-semibold text-foreground">Paste Contract Text</Text>
-                  <Text className="text-sm text-muted text-center">Copy and paste the contract text directly (first section only is analyzed)</Text>
+                  <Text className="text-sm text-muted text-center">Copy and paste the contract text directly</Text>
                 </View>
               </TouchableOpacity>
               <TouchableOpacity
@@ -466,7 +466,7 @@ export default function UploadScreen() {
                 <View className="items-center gap-3">
                   <IconSymbol size={48} name="photo.on.rectangle.angled" color={colors.primary} />
                   <Text className="text-lg font-semibold text-foreground">Select Document Photos</Text>
-                  <Text className="text-sm text-muted text-center">Choose multiple photos from gallery (one document)</Text>
+                  <Text className="text-sm text-muted text-center">Choose multiple photos from gallery</Text>
                 </View>
               </TouchableOpacity>
               <TouchableOpacity
@@ -477,7 +477,7 @@ export default function UploadScreen() {
                 <View className="items-center gap-3">
                   <IconSymbol size={48} name="camera.fill" color={colors.primary} />
                   <Text className="text-lg font-semibold text-foreground">Capture with Camera</Text>
-                  <Text className="text-sm text-muted text-center">Take one or more photos (one document)</Text>
+                  <Text className="text-sm text-muted text-center">Take one or more photos</Text>
                 </View>
               </TouchableOpacity>
             </View>
