@@ -155,18 +155,26 @@ export default function UploadScreen() {
   };
 
   const handlePickImages = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ["image/*"],
-      multiple: true,
-      copyToCacheDirectory: true,
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Photo Library Permission Required",
+        "Please allow photo library access in Settings to select contract photos.",
+      );
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: "images",
+      allowsMultipleSelection: true,
+      quality: 0.85,
     });
     if (result.canceled) return;
     setImageFiles(
       result.assets.map((asset) => ({
         uri: asset.uri,
-        mimeType: asset.mimeType,
-        fileName: asset.name,
-        fileSize: asset.size,
+        mimeType: asset.mimeType || "image/jpeg",
+        fileName: asset.fileName || `photo_${Date.now()}.jpg`,
+        fileSize: asset.fileSize,
       })),
     );
     setUploadMethod("images");
