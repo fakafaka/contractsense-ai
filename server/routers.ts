@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router, userOrDeviceProcedure } from "./_core/trpc";
+import { adminProcedure, protectedProcedure, publicProcedure, router, userOrDeviceProcedure } from "./_core/trpc";
 import * as db from "./db";
 import {
   evaluateAnalysisQuality,
@@ -306,8 +306,8 @@ export const appRouter = router({
         return job;
       }),
 
-    list: protectedProcedure.query(async ({ ctx }) => {
-      const analyses = await db.getUserAnalyses(ctx.user.id);
+    list: userOrDeviceProcedure.query(async ({ ctx }) => {
+      const analyses = await db.getUserAnalyses(ctx.effectiveUserId);
       const results = [];
       for (const analysis of analyses) {
         const contract = await db.getContractById(analysis.contractId);
@@ -410,8 +410,8 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    deleteMyData: protectedProcedure.mutation(async ({ ctx }) => {
-      const result = await db.deleteUserData(ctx.user.id);
+    deleteMyData: userOrDeviceProcedure.mutation(async ({ ctx }) => {
+      const result = await db.deleteUserData(ctx.effectiveUserId);
       return {
         success: true,
         ...result,
@@ -422,6 +422,18 @@ export const appRouter = router({
       .input(z.object({ userId: z.number().int().positive() }))
       .query(async ({ input, ctx }) => {
         ensureAdmin(ctx.user);
+        return db.getCreditUsageState(input.userId);
+      }),
+
+    adminAddCredits: adminProcedure
+      .input(
+        z.object({
+          userId: z.number().int().positive(),
+          credits: z.number().int().positive().max(100),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        await db.addPaidCredits(input.userId, input.credits);
         return db.getCreditUsageState(input.userId);
       }),
   }),

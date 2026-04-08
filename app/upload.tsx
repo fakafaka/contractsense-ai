@@ -1,13 +1,15 @@
-import { ScrollView, Text, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, Linking } from "react-native";
+import { ScrollView, Text, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, Platform } from "react-native";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import * as ImagePicker from "expo-image-picker";
 import { trpc } from "@/lib/trpc";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { getApiBaseUrl } from "@/constants/oauth";
+import { getOrCreateDeviceId } from "@/lib/device-id";
 import {
   endIapConnection,
   finishIapTransaction,
@@ -15,7 +17,6 @@ import {
   initIapConnection,
   purchaseErrorListener,
   purchaseUpdatedListener,
-  getRestorePurchases,
   IAP_PRODUCT_ID,
   requestFiveCreditsPurchase,
 } from "@/lib/iap";
@@ -34,6 +35,99 @@ export default function UploadScreen() {
   const trpcUtils = trpc.useUtils();
   const activeJobIdRef = useRef<string | null>(null);
   const { data: usage } = trpc.contracts.usageStatus.useQuery();
+
+  // IAP state
+  const [iapReady, setIapReady] = useState(false);
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [iapProduct, setIapProduct] = useState<any>(null);
+
+  // IAP: init connection once on mount, clean up on unmount
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+
+    let purchaseListener: any = null;
+    let errorListener: any = null;
+
+    const init = async () => {
+      try {
+        await initIapConnection();
+        const products = await getIapProducts();
+        if (products && products.length > 0) {
+          setIapProduct(products[0]);
+        }
+        setIapReady(true);
+
+        purchaseListener = purchaseUpdatedListener(async (purchase: any) => {
+          const receipt = purchase.transactionReceipt || purchase.transactionReceiptData || "";
+          if (!receipt) return;
+          try {
+            const deviceId = await getOrCreateDeviceId();
+            const response = await fetch(`${getApiBaseUrl()}/api/iap/validate`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-device-id": deviceId,
+              },
+              body: JSON.stringify({ receipt, productId: IAP_PRODUCT_ID }),
+            });
+            const data = await response.json();
+            if (data.success) {
+              await finishIapTransaction(purchase);
+              trpcUtils.contracts.usageStatus.invalidate();
+              Alert.alert(
+                "Purchase Successful",
+                data.creditsAdded > 0
+                  ? `${data.creditsAdded} credits added to your account.`
+                  : "Credits already applied to your account.",
+              );
+            } else {
+              Alert.alert("Purchase Error", data.error || "Failed to validate purchase.");
+            }
+          } catch (err: any) {
+            Alert.alert("Purchase Error", err.message || "Failed to process purchase.");
+          } finally {
+            setIsPurchasing(false);
+          }
+        });
+
+        errorListener = purchaseErrorListener((error: any) => {
+          setIsPurchasing(false);
+          if (error.message && !error.message.toLowerCase().includes("cancel")) {
+            Alert.alert("Purchase Failed", error.message);
+          }
+        });
+      } catch {
+        // IAP unavailable: simulator, Expo Go, or native module not built
+      }
+    };
+
+    init();
+
+    return () => {
+      purchaseListener?.remove();
+      errorListener?.remove();
+      endIapConnection().catch(() => {});
+    };
+  }, []);
+
+  const handleBuyCredits = async () => {
+    if (!iapReady) {
+      Alert.alert(
+        "Purchases Unavailable",
+        "In-app purchases are not available on this device. Make sure you are using a production or TestFlight build.",
+      );
+      return;
+    }
+    try {
+      setIsPurchasing(true);
+      await requestFiveCreditsPurchase();
+    } catch (err: any) {
+      setIsPurchasing(false);
+      if (!err.message?.toLowerCase().includes("cancel")) {
+        Alert.alert("Purchase Failed", err.message || "Unable to start purchase.");
+      }
+    }
+  };
 
   const waitForJobCompletion = async (jobId: string) => {
     activeJobIdRef.current = jobId;
@@ -61,18 +155,26 @@ export default function UploadScreen() {
   };
 
   const handlePickImages = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ["image/*"],
-      multiple: true,
-      copyToCacheDirectory: true,
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Photo Library Permission Required",
+        "Please allow photo library access in Settings to select contract photos.",
+      );
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: "images",
+      allowsMultipleSelection: true,
+      quality: 0.85,
     });
     if (result.canceled) return;
     setImageFiles(
       result.assets.map((asset) => ({
         uri: asset.uri,
-        mimeType: asset.mimeType,
-        fileName: asset.name,
-        fileSize: asset.size,
+        mimeType: asset.mimeType || "image/jpeg",
+        fileName: asset.fileName || `photo_${Date.now()}.jpg`,
+        fileSize: asset.fileSize,
       })),
     );
     setUploadMethod("images");
@@ -81,10 +183,38 @@ export default function UploadScreen() {
 
   const handleCaptureImage = async () => {
     try {
-      await Linking.openURL("camera://");
-      Alert.alert("Capture Photo", "Take document photos in your camera app, then tap 'Select Document Photos' to import them.");
-    } catch {
-      Alert.alert("Camera", "Please use your camera app to capture photos, then select them from the gallery.");
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Camera Permission Required",
+          "Please allow camera access in Settings to capture contract photos.",
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: "images",
+        allowsMultipleSelection: false,
+        quality: 0.85,
+      });
+
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      setImageFiles((prev) => [
+        ...prev,
+        {
+          uri: asset.uri,
+          mimeType: asset.mimeType || "image/jpeg",
+          fileName: asset.fileName || `photo_${Date.now()}.jpg`,
+          fileSize: asset.fileSize,
+        },
+      ]);
+      setUploadMethod("images");
+      if (!contractName.trim()) setContractName("Photo Contract");
+    } catch (error) {
+      console.error("Camera error:", error);
+      Alert.alert("Camera Error", "Failed to open camera. Please try again.");
     }
   };
 
@@ -263,8 +393,43 @@ export default function UploadScreen() {
             >
               <IconSymbol size={24} name="chevron.right" color={colors.foreground} style={{ transform: [{ rotate: "180deg" }] }} />
             </TouchableOpacity>
-            <Text className="text-3xl font-bold text-foreground">Upload Contract</Text>
+            <Text className="text-3xl font-bold text-foreground flex-1">Upload Contract</Text>
+            <TouchableOpacity
+              style={{ opacity: 1 }}
+              onPress={() => router.push("/history" as any)}
+            >
+              <Text className="text-base font-semibold" style={{ color: colors.primary }}>History</Text>
+            </TouchableOpacity>
           </View>
+
+          {/* No credits — purchase banner */}
+          {usage && usage.remainingCredits === 0 && (
+            <View
+              className="rounded-2xl p-5 border-2"
+              style={{ backgroundColor: colors.primary + "12", borderColor: colors.primary }}
+            >
+              <Text className="text-base font-bold text-foreground text-center mb-1">
+                No credits remaining
+              </Text>
+              <Text className="text-sm text-muted text-center mb-4">
+                Buy 5 more analyses for $0.99
+              </Text>
+              <TouchableOpacity
+                className="bg-primary px-6 py-3 rounded-full"
+                style={{ opacity: isPurchasing ? 0.6 : 1 }}
+                disabled={isPurchasing}
+                onPress={handleBuyCredits}
+              >
+                <Text className="text-white font-bold text-center">
+                  {isPurchasing
+                    ? "Processing..."
+                    : iapProduct?.localizedPrice
+                      ? `Buy 5 credits — ${iapProduct.localizedPrice}`
+                      : "Buy 5 credits — $0.99"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Upload Method Selection */}
           {!uploadMethod && (
@@ -290,7 +455,7 @@ export default function UploadScreen() {
                 <View className="items-center gap-3">
                   <IconSymbol size={48} name="doc.text.fill" color={colors.primary} />
                   <Text className="text-lg font-semibold text-foreground">Paste Contract Text</Text>
-                  <Text className="text-sm text-muted text-center">Copy and paste the contract text directly (first section only is analyzed)</Text>
+                  <Text className="text-sm text-muted text-center">Copy and paste the contract text directly</Text>
                 </View>
               </TouchableOpacity>
               <TouchableOpacity
@@ -301,7 +466,7 @@ export default function UploadScreen() {
                 <View className="items-center gap-3">
                   <IconSymbol size={48} name="photo.on.rectangle.angled" color={colors.primary} />
                   <Text className="text-lg font-semibold text-foreground">Select Document Photos</Text>
-                  <Text className="text-sm text-muted text-center">Choose multiple photos from gallery (one document)</Text>
+                  <Text className="text-sm text-muted text-center">Choose multiple photos from gallery</Text>
                 </View>
               </TouchableOpacity>
               <TouchableOpacity
@@ -312,7 +477,7 @@ export default function UploadScreen() {
                 <View className="items-center gap-3">
                   <IconSymbol size={48} name="camera.fill" color={colors.primary} />
                   <Text className="text-lg font-semibold text-foreground">Capture with Camera</Text>
-                  <Text className="text-sm text-muted text-center">Take one or more photos (one document)</Text>
+                  <Text className="text-sm text-muted text-center">Take one or more photos</Text>
                 </View>
               </TouchableOpacity>
             </View>
@@ -437,8 +602,9 @@ export default function UploadScreen() {
           {uploadMethod && usage && (
             <View className="bg-surface rounded-xl p-4 border border-border">
               <Text className="text-sm text-muted">
-                Remaining credits: <Text className="text-foreground font-semibold">{usage.remainingCredits}</Text>.{" "}
-                New users get 3 free analyses. Additional +5 credit packs will be available in V1.
+                Remaining credits:{" "}
+                <Text className="text-foreground font-semibold">{usage.remainingCredits}</Text>.{" "}
+                New users get 3 free analyses. Buy 5 more for $0.99.
               </Text>
             </View>
           )}

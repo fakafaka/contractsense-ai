@@ -152,6 +152,19 @@ export default function AboutScreen() {
             <Text className="text-sm text-muted">ContractSense AI v1.0</Text>
             <Text className="text-xs text-muted mt-1">© 2026 All rights reserved</Text>
           </View>
+
+          {/* Dev-only: credits management — invisible in production builds */}
+          {__DEV__ && (
+            <TouchableOpacity
+              className="py-2"
+              style={{ opacity: 1 }}
+              onPress={() => router.push("/dev/credits" as any)}
+            >
+              <Text className="text-center text-xs" style={{ color: colors.muted }}>
+                ⚙ Dev: Manage Credits
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </ScreenContainer>

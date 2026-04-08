@@ -16,8 +16,8 @@ const env = {
   androidPackage: bundleId,
   iosBuildNumber: process.env.IOS_BUILD_NUMBER || "1",
   androidVersionCode: Number(process.env.ANDROID_VERSION_CODE || 1),
-  privacyPolicyUrl: process.env.PRIVACY_POLICY_URL || "",
-  termsOfUseUrl: process.env.TERMS_OF_USE_URL || "",
+  privacyPolicyUrl: process.env.PRIVACY_POLICY_URL || "https://api.apoteka24.me/privacy-policy.html",
+  termsOfUseUrl: process.env.TERMS_OF_USE_URL || "https://api.apoteka24.me/terms-of-use.html",
 };
 
 const config: ExpoConfig = {
@@ -91,6 +91,16 @@ const config: ExpoConfig = {
         },
       },
     ],
+    [
+      "expo-image-picker",
+      {
+        photosPermission:
+          "ContractSense AI accesses your photos to select contract images for analysis.",
+        cameraPermission:
+          "ContractSense AI uses the camera to capture contract photos for analysis.",
+      },
+    ],
+    "react-native-iap",
   ],
   extra: {
     privacyPolicyUrl: env.privacyPolicyUrl,
