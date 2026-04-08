@@ -60,7 +60,7 @@ async function startServer() {
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.header(
       "Access-Control-Allow-Headers",
-      "Origin, X-Requested-With, Content-Type, Accept, Authorization, Idempotency-Key",
+      "Origin, X-Requested-With, Content-Type, Accept, Authorization, Idempotency-Key, x-device-id",
     );
     if (origin && (allowAllOrigins || allowedOrigins.includes(origin))) {
       res.header("Access-Control-Allow-Credentials", "true");

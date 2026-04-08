@@ -81,6 +81,7 @@ export default function UploadScreen() {
                   : "Credits already applied to your account.",
               );
             } else {
+              await finishIapTransaction(purchase);
               Alert.alert("Purchase Error", data.error || "Failed to validate purchase.");
             }
           } catch (err: any) {
@@ -613,9 +614,9 @@ export default function UploadScreen() {
           {uploadMethod && (
             <TouchableOpacity
               className="bg-primary px-6 py-4 rounded-2xl"
-              style={{ opacity: 1 }}
+              style={{ opacity: (!!analysisStage || (usage?.remainingCredits === 0)) ? 0.4 : 1 }}
               onPress={handleAnalyze}
-              disabled={!!analysisStage}
+              disabled={!!analysisStage || usage?.remainingCredits === 0}
             >
               <Text className="text-white font-bold text-lg text-center">
                 {analysisStage ? "Analyzing..." : "Analyze Contract"}
