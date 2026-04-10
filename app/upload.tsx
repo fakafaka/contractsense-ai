@@ -112,13 +112,6 @@ export default function UploadScreen() {
   }, []);
 
   const handleBuyCredits = async () => {
-    if (!iapReady) {
-      Alert.alert(
-        "Purchases Unavailable",
-        "In-app purchases are not available on this device. Make sure you are using a production or TestFlight build.",
-      );
-      return;
-    }
     try {
       setIsPurchasing(true);
       await requestFiveCreditsPurchase();
@@ -417,16 +410,18 @@ export default function UploadScreen() {
               </Text>
               <TouchableOpacity
                 className="bg-primary px-6 py-3 rounded-full"
-                style={{ opacity: isPurchasing ? 0.6 : 1 }}
-                disabled={isPurchasing}
+                style={{ opacity: (isPurchasing || !iapReady) ? 0.6 : 1 }}
+                disabled={isPurchasing || !iapReady}
                 onPress={handleBuyCredits}
               >
                 <Text className="text-white font-bold text-center">
                   {isPurchasing
                     ? "Processing..."
-                    : iapProduct?.localizedPrice
-                      ? `Buy 5 credits — ${iapProduct.localizedPrice}`
-                      : "Buy 5 credits — $0.99"}
+                    : !iapReady
+                      ? "Loading..."
+                      : iapProduct?.localizedPrice
+                        ? `Buy 5 credits — ${iapProduct.localizedPrice}`
+                        : "Buy 5 credits — $0.99"}
                 </Text>
               </TouchableOpacity>
             </View>
