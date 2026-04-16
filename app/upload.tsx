@@ -14,6 +14,7 @@ import {
   endIapConnection,
   finishIapTransaction,
   getIapProducts,
+  getRestorePurchases,
   initIapConnection,
   purchaseErrorListener,
   purchaseUpdatedListener,
@@ -39,6 +40,7 @@ export default function UploadScreen() {
   // IAP state
   const [iapReady, setIapReady] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const [iapProduct, setIapProduct] = useState<any>(null);
 
   // IAP: init connection once on mount, clean up on unmount
@@ -126,6 +128,50 @@ export default function UploadScreen() {
       endIapConnection().catch(() => {});
     };
   }, []);
+
+  const handleRestorePurchases = async () => {
+    try {
+      setIsRestoring(true);
+      const purchases = await getRestorePurchases();
+      if (!purchases || purchases.length === 0) {
+        Alert.alert("No Purchases Found", "No previous purchases were found for this Apple ID.");
+        return;
+      }
+      // Re-validate each restored purchase against the server
+      const deviceId = await getOrCreateDeviceId();
+      let creditsRestored = 0;
+      for (const purchase of purchases) {
+        const receipt = purchase.transactionReceipt || purchase.transactionReceiptData || "";
+        if (!receipt) continue;
+        try {
+          const response = await fetch(`${getApiBaseUrl()}/api/iap/validate`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-device-id": deviceId,
+            },
+            body: JSON.stringify({ receipt, productId: IAP_PRODUCT_ID }),
+          });
+          const data = await response.json();
+          if (data.success && data.creditsAdded > 0) {
+            creditsRestored += data.creditsAdded;
+          }
+        } catch {
+          // continue with remaining purchases
+        }
+      }
+      trpcUtils.contracts.usageStatus.invalidate();
+      if (creditsRestored > 0) {
+        Alert.alert("Purchases Restored", `${creditsRestored} credits have been restored to your account.`);
+      } else {
+        Alert.alert("Purchases Restored", "Your purchases have been restored. Credits were already applied to your account.");
+      }
+    } catch (err: any) {
+      Alert.alert("Restore Failed", err.message || "Unable to restore purchases. Please try again.");
+    } finally {
+      setIsRestoring(false);
+    }
+  };
 
   const handleBuyCredits = async () => {
     try {
@@ -426,8 +472,8 @@ export default function UploadScreen() {
               </Text>
               <TouchableOpacity
                 className="bg-primary px-6 py-3 rounded-full"
-                style={{ opacity: (isPurchasing || !iapReady) ? 0.6 : 1 }}
-                disabled={isPurchasing || !iapReady}
+                style={{ opacity: (isPurchasing || isRestoring || !iapReady) ? 0.6 : 1 }}
+                disabled={isPurchasing || isRestoring || !iapReady}
                 onPress={handleBuyCredits}
               >
                 <Text className="text-white font-bold text-center">
@@ -438,6 +484,16 @@ export default function UploadScreen() {
                       : iapProduct?.localizedPrice
                         ? `Buy 5 credits — ${iapProduct.localizedPrice}`
                         : "Buy 5 credits — $0.99"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="mt-3 py-2"
+                style={{ opacity: (isPurchasing || isRestoring || !iapReady) ? 0.5 : 1 }}
+                disabled={isPurchasing || isRestoring || !iapReady}
+                onPress={handleRestorePurchases}
+              >
+                <Text className="text-sm text-center" style={{ color: colors.primary }}>
+                  {isRestoring ? "Restoring..." : "Restore Purchases"}
                 </Text>
               </TouchableOpacity>
             </View>
