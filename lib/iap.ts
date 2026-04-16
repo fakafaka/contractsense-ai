@@ -18,8 +18,10 @@ function getIapModule(): any {
 }
 
 export async function initIapConnection() {
+  console.log("[IAP] initIapConnection: starting");
   const iap = getIapModule();
-  await iap.initConnection();
+  const result = await iap.initConnection();
+  console.log("[IAP] initIapConnection: complete, result:", result);
 }
 
 export async function endIapConnection() {
@@ -30,13 +32,19 @@ export async function endIapConnection() {
 }
 
 export async function getIapProducts() {
+  console.log("[IAP] getIapProducts: fetching SKUs:", [IAP_PRODUCT_ID]);
   const iap = getIapModule();
-  return iap.getProducts({ skus: [IAP_PRODUCT_ID] });
+  const products = await iap.getProducts({ skus: [IAP_PRODUCT_ID] });
+  console.log("[IAP] getIapProducts: received", products?.length ?? 0, "products:", JSON.stringify(products));
+  return products;
 }
 
 export async function requestFiveCreditsPurchase() {
+  console.log("[IAP] requestFiveCreditsPurchase: requesting SKU:", IAP_PRODUCT_ID);
   const iap = getIapModule();
-  return iap.requestPurchase({ sku: IAP_PRODUCT_ID });
+  const result = await iap.requestPurchase({ sku: IAP_PRODUCT_ID });
+  console.log("[IAP] requestFiveCreditsPurchase: result:", result);
+  return result;
 }
 
 export async function getRestorePurchases() {

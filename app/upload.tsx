@@ -49,12 +49,25 @@ export default function UploadScreen() {
     let errorListener: any = null;
 
     const init = async () => {
+      console.log("[IAP] upload.tsx init: starting IAP initialization");
+
+      // Fallback: if IAP init doesn't complete within 5 seconds, unblock the button anyway
+      const iapTimeout = setTimeout(() => {
+        console.log("[IAP] upload.tsx init: timeout reached (5s), setting iapReady=true as fallback");
+        setIapReady(true);
+      }, 5000);
+
       try {
+        console.log("[IAP] upload.tsx init: calling initIapConnection");
         await initIapConnection();
+        console.log("[IAP] upload.tsx init: initIapConnection done, fetching products");
         const products = await getIapProducts();
+        console.log("[IAP] upload.tsx init: products fetched, count:", products?.length ?? 0);
         if (products && products.length > 0) {
           setIapProduct(products[0]);
         }
+        clearTimeout(iapTimeout);
+        console.log("[IAP] upload.tsx init: setting iapReady=true");
         setIapReady(true);
 
         purchaseListener = purchaseUpdatedListener(async (purchase: any) => {
@@ -97,8 +110,11 @@ export default function UploadScreen() {
             Alert.alert("Purchase Failed", error.message);
           }
         });
-      } catch {
+      } catch (err) {
         // IAP unavailable: simulator, Expo Go, or native module not built
+        console.log("[IAP] upload.tsx init: error during IAP initialization:", err);
+        clearTimeout(iapTimeout);
+        setIapReady(true);
       }
     };
 
