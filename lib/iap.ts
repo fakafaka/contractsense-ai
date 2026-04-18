@@ -34,31 +34,40 @@ export async function endIapConnection() {
 export async function getIapProducts() {
   console.log("[IAP] getIapProducts: fetching SKUs:", [IAP_PRODUCT_ID]);
   const iap = getIapModule();
-  const products = await iap.getProducts({ skus: [IAP_PRODUCT_ID] });
-  console.log("[IAP] getIapProducts: received", products?.length ?? 0, "product(s)");
-  if (products && products.length > 0) {
-    products.forEach((p: any, i: number) => {
-      console.log(`[IAP] getIapProducts: product[${i}] productId=${p.productId} title=${p.title} localizedPrice=${p.localizedPrice} type=${p.type}`);
-    });
-  } else {
-    console.warn("[IAP] getIapProducts: EMPTY — product not returned by the store. Check that:");
-    console.warn("[IAP]   1. The In-App Purchase ID in App Store Connect is exactly:", IAP_PRODUCT_ID);
-    console.warn("[IAP]   2. The IAP is in 'Ready to Submit' or 'Approved' state (not 'Missing Metadata')");
-    console.warn("[IAP]   3. You are signed in to a Sandbox tester account on the device");
-    console.warn("[IAP]   4. The app bundle ID in App Store Connect matches the running build");
-    console.warn("[IAP]   5. Agreements, Tax, and Banking are complete in App Store Connect");
+  // react-native-iap v14: getProducts was renamed to fetchProducts
+  const fetchFn = iap.fetchProducts ?? iap.getProducts;
+  if (!fetchFn) {
+    console.error("[IAP] getIapProducts: neither fetchProducts nor getProducts found on iap module");
+    return [];
   }
-  return products;
+  try {
+    const products = await fetchFn({ skus: [IAP_PRODUCT_ID] });
+    console.log("[IAP] getIapProducts: received", products?.length ?? 0, "products:", JSON.stringify(products));
+    if (!products || products.length === 0) {
+      console.warn(
+        "[IAP] getIapProducts: empty result — verify product ID '" + IAP_PRODUCT_ID + "' matches App Store Connect exactly, " +
+        "the app bundle ID matches the IAP configuration, and the product is in 'Ready to Submit' or 'Approved' state.",
+      );
+    }
+    return products ?? [];
+  } catch (err: any) {
+    console.error("[IAP] getIapProducts: error fetching products:", err?.message ?? err, "code:", err?.code);
+    throw err;
+  }
 }
 
 export async function requestFiveCreditsPurchase() {
   console.log("[IAP] requestFiveCreditsPurchase: requesting SKU:", IAP_PRODUCT_ID);
   const iap = getIapModule();
-  // react-native-iap v12+ uses andDangerouslyFinishTransactionAutomaticallyIOS: false
-  const params = { sku: IAP_PRODUCT_ID, andDangerouslyFinishTransactionAutomaticallyIOS: false };
-  console.log("[IAP] requestFiveCreditsPurchase: params:", JSON.stringify(params));
-  const result = await iap.requestPurchase(params);
-  console.log("[IAP] requestFiveCreditsPurchase: result:", JSON.stringify(result));
+  // react-native-iap v14: requestPurchase API changed — platform-specific request is nested under `request.apple` for iOS
+  const result = await iap.requestPurchase({
+    request: {
+      apple: { sku: IAP_PRODUCT_ID },
+      google: { skus: [IAP_PRODUCT_ID] },
+    },
+    type: "in-app",
+  });
+  console.log("[IAP] requestFiveCreditsPurchase: result:", result);
   return result;
 }
 
