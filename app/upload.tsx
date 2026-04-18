@@ -1,6 +1,6 @@
 import { ScrollView, Text, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, Platform } from "react-native";
 import { router } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
@@ -10,6 +10,8 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { getApiBaseUrl } from "@/constants/oauth";
 import { getOrCreateDeviceId } from "@/lib/device-id";
+import { AiDisclosureModal } from "@/components/ai-disclosure-modal";
+import { useAiConsent } from "@/hooks/use-ai-consent";
 import {
   endIapConnection,
   finishIapTransaction,
@@ -36,6 +38,12 @@ export default function UploadScreen() {
   const trpcUtils = trpc.useUtils();
   const activeJobIdRef = useRef<string | null>(null);
   const { data: usage } = trpc.contracts.usageStatus.useQuery();
+
+  // AI consent (one-time disclosure required by Apple Guideline 5.1.1(i))
+  const { hasConsented, isLoaded: isConsentLoaded, grantConsent } = useAiConsent();
+  const [showDisclosureModal, setShowDisclosureModal] = useState(false);
+  // Pending analysis callback — stored while the user reads the disclosure modal
+  const pendingAnalysisRef = useRef<(() => void) | null>(null);
 
   // IAP state
   const [iapReady, setIapReady] = useState(false);
@@ -312,6 +320,22 @@ export default function UploadScreen() {
     setUploadMethod(null);
   };
 
+  // Called when user taps "I Agree" in the disclosure modal
+  const handleConsentAgree = useCallback(async () => {
+    await grantConsent();
+    setShowDisclosureModal(false);
+    // Resume the analysis that was blocked waiting for consent
+    const resume = pendingAnalysisRef.current;
+    pendingAnalysisRef.current = null;
+    resume?.();
+  }, [grantConsent]);
+
+  // Called when user taps "No Thanks" — just dismiss, don't run the analysis
+  const handleConsentDecline = useCallback(() => {
+    pendingAnalysisRef.current = null;
+    setShowDisclosureModal(false);
+  }, []);
+
   const handleAnalyze = async () => {
     if (!contractName.trim()) {
       Alert.alert("Missing Name", "Please enter a contract name");
@@ -329,6 +353,14 @@ export default function UploadScreen() {
     }
     if (uploadMethod === "images" && imageFiles.length === 0) {
       Alert.alert("Missing Photos", "Please select or capture at least one photo");
+      return;
+    }
+
+    // Gate on AI data disclosure consent (Apple Guideline 5.1.1(i) / 5.1.2(i))
+    if (isConsentLoaded && !hasConsented) {
+      // Capture the rest of the analysis as a closure to resume after agreement
+      pendingAnalysisRef.current = () => handleAnalyze();
+      setShowDisclosureModal(true);
       return;
     }
 
@@ -439,6 +471,13 @@ export default function UploadScreen() {
 
   return (
     <ScreenContainer className="p-6">
+      {/* AI data-sharing disclosure — shown once before the first analysis */}
+      <AiDisclosureModal
+        visible={showDisclosureModal}
+        onAgree={handleConsentAgree}
+        onDecline={handleConsentDecline}
+      />
+
       <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
         <View className="flex-1 gap-6">
           {/* Header */}
