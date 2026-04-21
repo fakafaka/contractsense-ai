@@ -320,50 +320,14 @@ export default function UploadScreen() {
     setUploadMethod(null);
   };
 
-  // Called when user taps "I Agree" in the disclosure modal
-  const handleConsentAgree = useCallback(async () => {
-    await grantConsent();
-    setShowDisclosureModal(false);
-    // Resume the analysis that was blocked waiting for consent
-    const resume = pendingAnalysisRef.current;
-    pendingAnalysisRef.current = null;
-    resume?.();
-  }, [grantConsent]);
-
-  // Called when user taps "No Thanks" — just dismiss, don't run the analysis
-  const handleConsentDecline = useCallback(() => {
-    pendingAnalysisRef.current = null;
-    setShowDisclosureModal(false);
-  }, []);
-
-  const handleAnalyze = async () => {
-    if (!contractName.trim()) {
-      Alert.alert("Missing Name", "Please enter a contract name");
-      return;
-    }
-
-    if (uploadMethod === "text" && contractText.trim().length < 10) {
-      Alert.alert("Invalid Text", "Please enter at least 10 characters of contract text");
-      return;
-    }
-
-    if (uploadMethod === "pdf" && !pdfFile) {
-      Alert.alert("Missing File", "Please select a PDF file");
-      return;
-    }
-    if (uploadMethod === "images" && imageFiles.length === 0) {
-      Alert.alert("Missing Photos", "Please select or capture at least one photo");
-      return;
-    }
-
-    // Gate on AI data disclosure consent (Apple Guideline 5.1.1(i) / 5.1.2(i))
-    if (isConsentLoaded && !hasConsented) {
-      // Capture the rest of the analysis as a closure to resume after agreement
-      pendingAnalysisRef.current = () => handleAnalyze();
-      setShowDisclosureModal(true);
-      return;
-    }
-
+  // The actual analysis work — no consent check. Called either directly from
+  // handleAnalyze (when consent was already granted) or from handleConsentAgree
+  // (after the user taps "I Agree"). Split out so the post-consent resume does
+  // NOT re-enter the consent gate with stale React state (the reason Apple saw
+  // "I Agree" appear to do nothing: setHasConsented(true) hadn't committed yet,
+  // so the recursive handleAnalyze call hit the gate again and re-opened the
+  // modal).
+  const runAnalysis = async () => {
     setAnalysisStage("uploading");
 
     try {
@@ -423,7 +387,67 @@ export default function UploadScreen() {
     }
   };
 
+  // Validation + consent gate. If consent is already granted, runs the analysis
+  // immediately. Otherwise stashes runAnalysis in the ref and opens the modal.
+  const handleAnalyze = async () => {
+    if (!contractName.trim()) {
+      Alert.alert("Missing Name", "Please enter a contract name");
+      return;
+    }
 
+    if (uploadMethod === "text" && contractText.trim().length < 10) {
+      Alert.alert("Invalid Text", "Please enter at least 10 characters of contract text");
+      return;
+    }
+
+    if (uploadMethod === "pdf" && !pdfFile) {
+      Alert.alert("Missing File", "Please select a PDF file");
+      return;
+    }
+    if (uploadMethod === "images" && imageFiles.length === 0) {
+      Alert.alert("Missing Photos", "Please select or capture at least one photo");
+      return;
+    }
+
+    // AI disclosure consent gate (Apple Guideline 5.1.1(i) / 5.1.2(i)).
+    // Returning users: useAiConsent's useEffect has already hydrated
+    // hasConsented=true from AsyncStorage by the time the user taps Analyze,
+    // so this branch is skipped and analysis runs immediately.
+    // First-time users: stash runAnalysis (NOT handleAnalyze — that would
+    // re-enter the gate with stale state) and open the modal.
+    if (!hasConsented) {
+      pendingAnalysisRef.current = runAnalysis;
+      setShowDisclosureModal(true);
+      return;
+    }
+
+    await runAnalysis();
+  };
+
+  // "I Agree" — persist consent, close modal, then invoke the stashed
+  // runAnalysis directly. We deliberately do NOT call handleAnalyze here
+  // because setHasConsented(true) hasn't committed yet in this tick, so
+  // going back through the gate would re-open the modal (the exact bug
+  // Apple reported).
+  const handleConsentAgree = useCallback(async () => {
+    await grantConsent();
+    setShowDisclosureModal(false);
+    const resume = pendingAnalysisRef.current;
+    pendingAnalysisRef.current = null;
+    if (resume) {
+      // Fire without awaiting so the modal-close animation is not blocked.
+      // Errors inside runAnalysis are already handled by its own try/catch.
+      Promise.resolve(resume()).catch((err) => {
+        console.error("[Consent] resume failed:", err);
+      });
+    }
+  }, [grantConsent]);
+
+  // "No Thanks" — drop the pending analysis and close the modal.
+  const handleConsentDecline = useCallback(() => {
+    pendingAnalysisRef.current = null;
+    setShowDisclosureModal(false);
+  }, []);
 
   const handleCancelAnalysis = async () => {
     const jobId = activeJobIdRef.current;
@@ -720,9 +744,16 @@ export default function UploadScreen() {
           {uploadMethod && (
             <TouchableOpacity
               className="bg-primary px-6 py-4 rounded-2xl"
-              style={{ opacity: (!!analysisStage || (usage?.remainingCredits === 0)) ? 0.4 : 1 }}
+              style={{
+                opacity:
+                  !!analysisStage || usage?.remainingCredits === 0 || !isConsentLoaded
+                    ? 0.4
+                    : 1,
+              }}
               onPress={handleAnalyze}
-              disabled={!!analysisStage || usage?.remainingCredits === 0}
+              disabled={
+                !!analysisStage || usage?.remainingCredits === 0 || !isConsentLoaded
+              }
             >
               <Text className="text-white font-bold text-lg text-center">
                 {analysisStage ? "Analyzing..." : "Analyze Contract"}
