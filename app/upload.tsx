@@ -82,7 +82,10 @@ export default function UploadScreen() {
 
         purchaseListener = purchaseUpdatedListener(async (purchase: any) => {
           const receipt = purchase.transactionReceipt || purchase.transactionReceiptData || "";
-          if (!receipt) return;
+          if (!receipt) {
+            setIsPurchasing(false);
+            return;
+          }
           try {
             const deviceId = await getOrCreateDeviceId();
             const response = await fetch(`${getApiBaseUrl()}/api/iap/validate`, {
@@ -97,6 +100,7 @@ export default function UploadScreen() {
             if (data.success) {
               await finishIapTransaction(purchase);
               trpcUtils.contracts.usageStatus.invalidate();
+              setIsPurchasing(false);
               Alert.alert(
                 "Purchase Successful",
                 data.creditsAdded > 0
@@ -184,7 +188,8 @@ export default function UploadScreen() {
   const handleBuyCredits = async () => {
     try {
       setIsPurchasing(true);
-      await requestFiveCreditsPurchase();
+      const safetyTimeout = setTimeout(() => setIsPurchasing(false), 60000);
+      await requestFiveCreditsPurchase().finally(() => clearTimeout(safetyTimeout));
     } catch (err: any) {
       setIsPurchasing(false);
       if (!err.message?.toLowerCase().includes("cancel")) {
@@ -382,7 +387,12 @@ export default function UploadScreen() {
     } catch (error: any) {
       activeJobIdRef.current = null;
       console.error("Analysis error:", error);
-      Alert.alert("Analysis Failed", error.message || "Failed to analyze contract. Please try again.");
+      const knownMessages = ["Analysis was cancelled", "Analysis timed out. Please try again."];
+      const message =
+        typeof error?.message === "string" && knownMessages.includes(error.message)
+          ? error.message
+          : "Unable to analyze this document. Please try a different file or paste the contract text directly.";
+      Alert.alert("Analysis Failed", message);
       setAnalysisStage(null);
     }
   };
