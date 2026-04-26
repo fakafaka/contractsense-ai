@@ -1,5 +1,7 @@
 export const IAP_PRODUCT_ID = "contractsense_5_credits";
 
+let loadedProducts: any[] = [];
+
 type PurchaseEvent = {
   transactionId?: string;
   transactionReceipt?: string;
@@ -49,7 +51,8 @@ export async function getIapProducts() {
         "the app bundle ID matches the IAP configuration, and the product is in 'Ready to Submit' or 'Approved' state.",
       );
     }
-    return products ?? [];
+    loadedProducts = products ?? [];
+    return loadedProducts;
   } catch (err: any) {
     console.error("[IAP] getIapProducts: error fetching products:", err?.message ?? err, "code:", err?.code);
     throw err;
@@ -57,6 +60,9 @@ export async function getIapProducts() {
 }
 
 export async function requestFiveCreditsPurchase() {
+  if (loadedProducts.length === 0) {
+    throw new Error("Product not available. Please check your internet connection and try again.");
+  }
   console.log("[IAP] requestFiveCreditsPurchase: requesting SKU:", IAP_PRODUCT_ID);
   const iap = getIapModule();
   // react-native-iap v14: requestPurchase API changed — platform-specific request is nested under `request.apple` for iOS
