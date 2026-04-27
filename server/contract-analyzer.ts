@@ -68,12 +68,15 @@ export function getAnalysisScopeMetadata(text: string): AnalysisScopeMetadata {
  */
 export async function analyzeContract(
   contractText: string,
-  mode: AnalysisMode = "standard"
+  mode: AnalysisMode = "standard",
+  language?: string
 ): Promise<AnalysisResult> {
   const startTime = Date.now();
 
-  // System prompt that sets the context and tone
+  const responseLanguage = language || "English";
   const systemPrompt = `You are a contract analysis assistant helping non-lawyers understand legal documents. Your goal is to explain contracts in plain English, without legal jargon.
+
+Provide your entire response in ${responseLanguage} language. The contract may be in any language but your analysis must be in ${responseLanguage}.
 
 IMPORTANT GUIDELINES:
 - Use simple, everyday language

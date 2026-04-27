@@ -33,6 +33,7 @@ async function ingestToUnifiedText(input: {
   pdfBase64?: string;
   pdfFileSize?: number;
   images?: Array<{ base64: string; mimeType?: string; size?: number }>;
+  language?: string;
 }) {
   if (input.inputType === "text") {
     const text = (input.text || "").trim();
@@ -93,6 +94,7 @@ async function enqueueUnifiedDocument(input: {
   pdfBase64?: string;
   pdfFileSize?: number;
   images?: Array<{ base64: string; mimeType?: string; size?: number }>;
+  language?: string;
 }) {
   const ingested = await ingestToUnifiedText(input);
   const scope = getAnalysisScopeMetadata(ingested.text);
@@ -104,6 +106,7 @@ async function enqueueUnifiedDocument(input: {
       contentType: ingested.contentType,
       fileUrl: ingested.fileUrl,
       fileSize: ingested.fileSize,
+      language: input.language,
     },
     input.userId,
   );
@@ -150,6 +153,7 @@ export const appRouter = router({
               }),
             )
             .optional(),
+          language: z.string().optional(),
         }),
       )
       .mutation(async ({ input, ctx }) => {
@@ -161,6 +165,7 @@ export const appRouter = router({
           pdfBase64: input.pdfBase64,
           pdfFileSize: input.pdfFileSize,
           images: input.images,
+          language: input.language,
         });
       }),
 

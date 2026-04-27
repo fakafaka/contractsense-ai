@@ -1,6 +1,7 @@
 import { ScrollView, Text, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, Platform } from "react-native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getLocales } from "expo-localization";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
@@ -335,15 +336,18 @@ export default function UploadScreen() {
   const runAnalysis = async () => {
     setAnalysisStage("uploading");
 
+    const deviceLanguage = getLocales()?.[0]?.languageCode ?? "en";
+
     try {
       if (uploadMethod === "text") {
         const job = await enqueueDocumentMutation.mutateAsync({
           name: contractName.trim(),
           inputType: "text",
           text: contractText.trim(),
+          language: deviceLanguage,
         });
         const analysisId = await waitForJobCompletion(job.jobId);
-        
+
         // Navigate to analysis screen
         router.replace(`/analysis/${analysisId}` as any);
       } else if (uploadMethod === "pdf" && pdfFile) {
@@ -357,9 +361,10 @@ export default function UploadScreen() {
           inputType: "pdf",
           pdfBase64,
           pdfFileSize: pdfFile.size,
+          language: deviceLanguage,
         });
         const analysisId = await waitForJobCompletion(job.jobId);
-        
+
         // Navigate to analysis screen
         router.replace(`/analysis/${analysisId}` as any);
       } else if (uploadMethod === "images") {
@@ -378,6 +383,7 @@ export default function UploadScreen() {
           name: contractName.trim(),
           inputType: "images",
           images,
+          language: deviceLanguage,
         });
         const analysisId = await waitForJobCompletion(job.jobId);
 

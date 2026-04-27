@@ -17,6 +17,7 @@ type QueueJobInput = {
   contentType: "text" | "pdf" | "images";
   fileUrl?: string;
   fileSize?: number;
+  language?: string;
 };
 
 
@@ -154,7 +155,7 @@ async function processJob(job: QueueJob) {
       fileSize: job.input.fileSize,
     });
 
-    const analysis = await analyzeContract(job.input.text, mode);
+    const analysis = await analyzeContract(job.input.text, mode, job.input.language);
     if (isCancelled(job)) {
       await db.deleteContract(createdContractId);
       return;
