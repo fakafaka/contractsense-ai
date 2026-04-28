@@ -1,5 +1,6 @@
 import { ScrollView, Text, View, TouchableOpacity, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -7,21 +8,22 @@ import { useColors } from "@/hooks/use-colors";
 
 export default function HistoryScreen() {
   const colors = useColors();
-  
+  const { t, i18n } = useTranslation();
+
   const { data: analyses = [], isLoading } = trpc.contracts.list.useQuery();
-  
+
   return (
     <ScreenContainer className="p-6">
       <View className="flex-1">
         {/* Header */}
         <View className="flex-row items-center justify-between mb-6">
-          <Text className="text-3xl font-bold text-foreground">History</Text>
+          <Text className="text-3xl font-bold text-foreground">{t("history.title")}</Text>
           <TouchableOpacity
             style={{ opacity: 1 }}
             onPress={() => router.push("/upload" as any)}
           >
             <Text className="text-base font-semibold" style={{ color: colors.primary }}>
-              + New
+              {t("history.new")}
             </Text>
           </TouchableOpacity>
         </View>
@@ -36,17 +38,17 @@ export default function HistoryScreen() {
           <View className="flex-1 items-center justify-center">
             <IconSymbol size={64} name="clock.fill" color={colors.muted} />
             <Text className="text-xl font-semibold text-foreground mt-4 text-center">
-              No analyses yet
+              {t("history.empty_title")}
             </Text>
             <Text className="text-sm text-muted mt-2 text-center max-w-xs">
-              Start by analyzing your first contract
+              {t("history.empty_subtitle")}
             </Text>
             <TouchableOpacity
               className="bg-primary px-6 py-3 rounded-full mt-6"
               style={{ opacity: 1 }}
               onPress={() => router.push("/upload" as any)}
             >
-              <Text className="text-white font-semibold">Analyze Contract</Text>
+              <Text className="text-white font-semibold">{t("history.analyze_contract")}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -66,7 +68,7 @@ export default function HistoryScreen() {
                     {item.title}
                   </Text>
                   <Text className="text-sm text-muted mt-2">
-                    {new Date(item.createdAt).toLocaleDateString("en-US", {
+                    {new Date(item.createdAt).toLocaleDateString(i18n.language, {
                       year: "numeric",
                       month: "long",
                       day: "numeric",

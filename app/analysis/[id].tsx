@@ -1,5 +1,6 @@
 import { ScrollView, Text, View, TouchableOpacity, ActivityIndicator } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -7,6 +8,7 @@ import { useColors } from "@/hooks/use-colors";
 
 export default function AnalysisScreen() {
   const colors = useColors();
+  const { t, i18n } = useTranslation();
   const { id } = useLocalSearchParams();
   const analysisId = parseInt(id as string);
 
@@ -28,17 +30,17 @@ export default function AnalysisScreen() {
       <ScreenContainer className="p-6 items-center justify-center">
         <IconSymbol size={64} name="xmark.circle.fill" color={colors.error} />
         <Text className="text-xl font-semibold text-foreground mt-4 text-center">
-          Analysis Not Found
+          {t("analysis.not_found")}
         </Text>
         <Text className="text-sm text-muted mt-2 text-center">
-          {error?.message || "Unable to load analysis"}
+          {error?.message || t("analysis.unable_to_load")}
         </Text>
         <TouchableOpacity
           className="bg-primary px-6 py-3 rounded-full mt-6"
           style={{ opacity: 1 }}
           onPress={() => router.back()}
         >
-          <Text className="text-white font-semibold">Go Back</Text>
+          <Text className="text-white font-semibold">{t("analysis.go_back")}</Text>
         </TouchableOpacity>
       </ScreenContainer>
     );
@@ -67,7 +69,7 @@ export default function AnalysisScreen() {
 
           {/* Date */}
           <Text className="text-sm text-muted">
-            {contract && new Date(contract.createdAt).toLocaleDateString("en-US", {
+            {contract && new Date(contract.createdAt).toLocaleDateString(i18n.language, {
               year: "numeric",
               month: "long",
               day: "numeric",
@@ -78,7 +80,7 @@ export default function AnalysisScreen() {
           <View className="bg-surface rounded-2xl p-5 border border-border">
             <View className="flex-row items-center gap-3 mb-3">
               <IconSymbol size={24} name="doc.text.fill" color={colors.primary} />
-              <Text className="text-lg font-bold text-foreground">What is this contract about?</Text>
+              <Text className="text-lg font-bold text-foreground">{t("analysis.section_summary")}</Text>
             </View>
             <Text className="text-base text-foreground leading-relaxed">{analysis.summary}</Text>
           </View>
@@ -87,7 +89,7 @@ export default function AnalysisScreen() {
           <View className="bg-surface rounded-2xl p-5 border border-border">
             <View className="flex-row items-center gap-3 mb-3">
               <IconSymbol size={24} name="checkmark.circle.fill" color={colors.primary} />
-              <Text className="text-lg font-bold text-foreground">Your main responsibilities</Text>
+              <Text className="text-lg font-bold text-foreground">{t("analysis.section_obligations")}</Text>
             </View>
             <View className="gap-3">
               {analysis.mainObligations.map((obligation: string, index: number) => (
@@ -104,7 +106,7 @@ export default function AnalysisScreen() {
             <View className="bg-surface rounded-2xl p-5 border border-border">
               <View className="flex-row items-center gap-3 mb-3">
                 <IconSymbol size={24} name="exclamationmark.triangle.fill" color={colors.warning} />
-                <Text className="text-lg font-bold text-foreground">What can go wrong</Text>
+                <Text className="text-lg font-bold text-foreground">{t("analysis.section_risks")}</Text>
               </View>
               <View className="gap-4">
                 {analysis.potentialRisks.map((risk: any, index: number) => (
@@ -136,7 +138,7 @@ export default function AnalysisScreen() {
               <View className="flex-row items-center gap-3 mb-3">
                 <IconSymbol size={24} name="xmark.circle.fill" color={colors.error} />
                 <Text className="text-lg font-bold" style={{ color: colors.error }}>
-                  Red flags to watch out for
+                  {t("analysis.section_red_flags")}
                 </Text>
               </View>
               <View className="gap-4">
@@ -158,12 +160,9 @@ export default function AnalysisScreen() {
             <View className="flex-row items-start gap-3">
               <IconSymbol size={20} name="exclamationmark.triangle.fill" color={colors.warning} />
               <View className="flex-1">
-                <Text className="text-sm font-semibold text-foreground mb-2">Important Disclaimer</Text>
+                <Text className="text-sm font-semibold text-foreground mb-2">{t("analysis.disclaimer_title")}</Text>
                 <Text className="text-sm text-muted leading-relaxed">
-                  This analysis is for informational purposes only and does not constitute legal advice.
-                  Only the first 10 pages of the provided document (or equivalent initial text section)
-                  were analyzed.
-                  Please consult with a qualified attorney for legal guidance regarding this contract.
+                  {t("analysis.disclaimer_body")}
                 </Text>
               </View>
             </View>
@@ -176,14 +175,14 @@ export default function AnalysisScreen() {
               style={{ opacity: 1 }}
               onPress={() => router.push("/history" as any)}
             >
-              <Text className="text-white font-bold text-center">View All Analyses</Text>
+              <Text className="text-white font-bold text-center">{t("analysis.view_all")}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               className="bg-surface px-6 py-4 rounded-full border border-border"
               style={{ opacity: 1 }}
               onPress={() => router.push("/upload" as any)}
             >
-              <Text className="text-foreground font-bold text-center">Analyze Another Contract</Text>
+              <Text className="text-foreground font-bold text-center">{t("analysis.analyze_another")}</Text>
             </TouchableOpacity>
           </View>
         </View>

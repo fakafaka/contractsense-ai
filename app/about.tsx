@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, ScrollView, Alert, Linking } from "react-
 import Constants from "expo-constants";
 import { router } from "expo-router";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
@@ -14,18 +15,19 @@ const termsOfUseUrl =
 
 export default function AboutScreen() {
   const colors = useColors();
+  const { t } = useTranslation();
   const [isDeleting, setIsDeleting] = useState(false);
   const utils = trpc.useUtils();
   const deleteMyDataMutation = trpc.contracts.deleteMyData.useMutation();
 
   const handleDeleteData = () => {
     Alert.alert(
-      "Delete My Data",
-      "This will permanently delete your uploaded contracts and analysis history now. This action cannot be undone.",
+      t("about.delete_title"),
+      t("about.delete_confirm"),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("about.delete_cancel"), style: "cancel" },
         {
-          text: "Delete",
+          text: t("about.delete_action"),
           style: "destructive",
           onPress: async () => {
             try {
@@ -33,11 +35,14 @@ export default function AboutScreen() {
               const result = await deleteMyDataMutation.mutateAsync();
               await utils.contracts.list.invalidate();
               Alert.alert(
-                "Data Deleted",
-                `Deleted ${result.contractsDeleted} contracts and ${result.analysesDeleted} analyses.`,
+                t("about.delete_success_title"),
+                t("about.delete_success_body", {
+                  contracts: result.contractsDeleted,
+                  analyses: result.analysesDeleted,
+                }),
               );
             } catch (error: any) {
-              Alert.alert("Delete Failed", error?.message || "Unable to delete your data right now.");
+              Alert.alert(t("about.delete_fail_title"), error?.message || t("about.delete_fail_body"));
             } finally {
               setIsDeleting(false);
             }
@@ -47,16 +52,16 @@ export default function AboutScreen() {
     );
   };
 
-  const openExternalPolicy = async (url: string, label: string) => {
+  const openExternalPolicy = async (url: string, labelKey: "about.privacy_policy" | "about.terms_of_use") => {
+    const label = t(labelKey);
     if (!url || !/^https?:\/\//i.test(url)) {
-      Alert.alert(label, `${label} URL is not configured yet.`);
+      Alert.alert(label, t("about.url_not_configured", { label }));
       return;
     }
-
     try {
       await Linking.openURL(url);
     } catch {
-      Alert.alert(label, `Failed to open ${label.toLowerCase()} URL.`);
+      Alert.alert(label, t("about.url_open_failed", { label: label.toLowerCase() }));
     }
   };
 
@@ -74,49 +79,43 @@ export default function AboutScreen() {
                 style={{ transform: [{ rotate: "180deg" }] }}
               />
             </TouchableOpacity>
-            <Text className="text-3xl font-bold text-foreground">About & Privacy</Text>
+            <Text className="text-3xl font-bold text-foreground">{t("about.title")}</Text>
           </View>
 
           {/* Legal Disclaimer */}
           <View className="bg-surface rounded-2xl p-6 border border-border">
             <View className="flex-row items-start gap-3 mb-3">
               <IconSymbol size={24} name="exclamationmark.triangle.fill" color={colors.warning} />
-              <Text className="flex-1 text-lg font-bold text-foreground">Not Legal Advice</Text>
+              <Text className="flex-1 text-lg font-bold text-foreground">{t("about.not_legal_advice")}</Text>
             </View>
             <Text className="text-sm text-muted leading-relaxed">
-              ContractSense AI provides contract analysis for informational purposes only. This service does not
-              constitute legal advice, and should not be relied upon as a substitute for consultation with a qualified
-              attorney. Always consult with a licensed legal professional for advice regarding contracts and legal
-              matters.
+              {t("about.not_legal_advice_body")}
             </Text>
           </View>
 
           {/* Data Handling */}
           <View className="bg-surface rounded-2xl p-6 border border-border">
-            <Text className="text-lg font-bold text-foreground mb-4">Data Handling</Text>
+            <Text className="text-lg font-bold text-foreground mb-4">{t("about.data_handling")}</Text>
 
             <View className="gap-4">
               <View>
-                <Text className="text-base font-semibold text-foreground mb-1">What We Upload</Text>
+                <Text className="text-base font-semibold text-foreground mb-1">{t("about.what_we_upload")}</Text>
                 <Text className="text-sm text-muted leading-relaxed">
-                  • Contract text or PDF files you submit{"\n"}• Contract names you provide{"\n"}• AI-generated
-                  analysis results
+                  {t("about.what_we_upload_body")}
                 </Text>
               </View>
 
               <View>
-                <Text className="text-base font-semibold text-foreground mb-1">Data Retention</Text>
+                <Text className="text-base font-semibold text-foreground mb-1">{t("about.data_retention")}</Text>
                 <Text className="text-sm text-muted leading-relaxed">
-                  Your uploaded contracts and analyses are automatically deleted after 24 hours. You can also manually
-                  delete all your data at any time using the button below.
+                  {t("about.data_retention_body")}
                 </Text>
               </View>
 
               <View>
-                <Text className="text-base font-semibold text-foreground mb-1">Security</Text>
+                <Text className="text-base font-semibold text-foreground mb-1">{t("about.security")}</Text>
                 <Text className="text-sm text-muted leading-relaxed">
-                  All data is transmitted over encrypted connections (HTTPS). We do not share your contract data with
-                  third parties.
+                  {t("about.security_body")}
                 </Text>
               </View>
             </View>
@@ -130,27 +129,35 @@ export default function AboutScreen() {
             disabled={isDeleting}
           >
             <Text className="text-white font-bold text-lg text-center">
-              {isDeleting ? "Deleting..." : "Delete My Data Now"}
+              {isDeleting ? t("about.deleting") : t("about.delete_data")}
             </Text>
           </TouchableOpacity>
 
           {/* Legal Links */}
-          <TouchableOpacity className="py-2" style={{ opacity: 1 }} onPress={() => openExternalPolicy(privacyPolicyUrl, "Privacy Policy")}>
+          <TouchableOpacity
+            className="py-2"
+            style={{ opacity: 1 }}
+            onPress={() => openExternalPolicy(privacyPolicyUrl, "about.privacy_policy")}
+          >
             <Text className="text-center font-semibold" style={{ color: colors.primary }}>
-              View Privacy Policy
+              {t("about.view_privacy")}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity className="py-2" style={{ opacity: 1 }} onPress={() => openExternalPolicy(termsOfUseUrl, "Terms of Use")}>
+          <TouchableOpacity
+            className="py-2"
+            style={{ opacity: 1 }}
+            onPress={() => openExternalPolicy(termsOfUseUrl, "about.terms_of_use")}
+          >
             <Text className="text-center font-semibold" style={{ color: colors.primary }}>
-              View Terms of Use
+              {t("about.view_terms")}
             </Text>
           </TouchableOpacity>
 
           {/* App Info */}
           <View className="items-center mt-4">
-            <Text className="text-sm text-muted">ContractSense AI v1.0</Text>
-            <Text className="text-xs text-muted mt-1">© 2026 All rights reserved</Text>
+            <Text className="text-sm text-muted">{t("about.app_version")}</Text>
+            <Text className="text-xs text-muted mt-1">{t("about.copyright")}</Text>
           </View>
         </View>
       </ScrollView>

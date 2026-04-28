@@ -1,10 +1,12 @@
 import { Text, View, TouchableOpacity } from "react-native";
 import { router } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 
 export default function WelcomeScreen() {
   const colors = useColors();
+  const { t } = useTranslation();
 
   return (
     <ScreenContainer className="p-8">
@@ -15,19 +17,17 @@ export default function WelcomeScreen() {
             ContractSense AI
           </Text>
           <Text className="text-xl text-muted text-center">
-            Understand contracts in plain English
+            {t("welcome.tagline")}
           </Text>
         </View>
 
         {/* Disclaimer */}
         <View className="bg-surface rounded-2xl p-6 border border-border w-full">
           <Text className="text-base font-semibold text-foreground mb-3 text-center">
-            Important Disclaimer
+            {t("welcome.disclaimer_title")}
           </Text>
           <Text className="text-sm text-muted leading-relaxed text-center">
-            This analysis is for informational purposes only and does not constitute legal advice.
-            New users get 3 free analyses, and only the first 10 pages are analyzed.
-            Please consult with a qualified attorney for legal guidance regarding contracts.
+            {t("welcome.disclaimer_body")}
           </Text>
         </View>
 
@@ -37,9 +37,9 @@ export default function WelcomeScreen() {
           style={{ opacity: 1 }}
           onPress={() => router.push("/upload" as any)}
         >
-          <Text className="text-white font-bold text-xl text-center">Get Started</Text>
+          <Text className="text-white font-bold text-xl text-center">{t("welcome.get_started")}</Text>
         </TouchableOpacity>
-        
+
         {/* About & Privacy Link */}
         <TouchableOpacity
           className="py-3"
@@ -47,7 +47,7 @@ export default function WelcomeScreen() {
           onPress={() => router.push("/about" as any)}
         >
           <Text className="text-center font-semibold" style={{ color: colors.primary }}>
-            About & Privacy
+            {t("welcome.about_privacy")}
           </Text>
         </TouchableOpacity>
       </View>

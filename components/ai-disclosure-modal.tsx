@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 import Constants from "expo-constants";
+import { useTranslation } from "react-i18next";
 import { useColors } from "@/hooks/use-colors";
 
 // Resolved once at module load so every render doesn't re-read the config
@@ -20,27 +21,19 @@ type Props = {
   onDecline: () => void;
 };
 
-/**
- * One-time AI data disclosure modal required by Apple Guideline 5.1.1(i) /
- * 5.1.2(i). Tells the user that contract text is sent to OpenAI and asks for
- * explicit agreement before the first analysis.
- *
- * Show when `useAiConsent().hasConsented === false`.
- * Call `onAgree` → `grantConsent()` when the user taps "I Agree".
- * Call `onDecline` when they tap "No Thanks" (dismiss + don't proceed).
- */
 export function AiDisclosureModal({ visible, onAgree, onDecline }: Props) {
   const colors = useColors();
+  const { t } = useTranslation();
 
   const handleOpenPrivacyPolicy = async () => {
     if (!privacyPolicyUrl || !/^https?:\/\//i.test(privacyPolicyUrl)) {
-      Alert.alert("Privacy Policy", "Privacy policy URL is not configured yet.");
+      Alert.alert(t("disclosure.title"), t("disclosure.privacy_not_configured"));
       return;
     }
     try {
       await Linking.openURL(privacyPolicyUrl);
     } catch {
-      Alert.alert("Privacy Policy", "Failed to open the privacy policy. Please try again.");
+      Alert.alert(t("disclosure.title"), t("disclosure.privacy_open_failed"));
     }
   };
 
@@ -96,7 +89,7 @@ export function AiDisclosureModal({ visible, onAgree, onDecline }: Props) {
               marginBottom: 4,
             }}
           >
-            AI Analysis Disclosure
+            {t("disclosure.title")}
           </Text>
           <Text
             style={{
@@ -106,7 +99,7 @@ export function AiDisclosureModal({ visible, onAgree, onDecline }: Props) {
               marginBottom: 20,
             }}
           >
-            Please read before your first analysis
+            {t("disclosure.subtitle")}
           </Text>
 
           <ScrollView
@@ -127,22 +120,22 @@ export function AiDisclosureModal({ visible, onAgree, onDecline }: Props) {
             >
               <DisclosureRow
                 icon="📤"
-                heading="What is shared"
-                body="To generate your analysis, the text of your uploaded contract is sent to OpenAI's API. OpenAI processes this data on their servers."
+                heading={t("disclosure.shared_heading")}
+                body={t("disclosure.shared_body")}
                 colors={colors}
               />
               <View style={{ height: 1, backgroundColor: colors.border }} />
               <DisclosureRow
                 icon="🚫"
-                heading="What we don't do"
-                body="We do not sell your contract data. Your documents are not used to train AI models. Data is transmitted over an encrypted connection."
+                heading={t("disclosure.no_sell_heading")}
+                body={t("disclosure.no_sell_body")}
                 colors={colors}
               />
               <View style={{ height: 1, backgroundColor: colors.border }} />
               <DisclosureRow
                 icon="📋"
-                heading="Your control"
-                body='You can delete all your data at any time from the About screen. Tapping "No Thanks" will cancel this analysis.'
+                heading={t("disclosure.control_heading")}
+                body={t("disclosure.control_body")}
                 colors={colors}
               />
             </View>
@@ -161,7 +154,7 @@ export function AiDisclosureModal({ visible, onAgree, onDecline }: Props) {
                   fontWeight: "500",
                 }}
               >
-                Read our full Privacy Policy →
+                {t("disclosure.privacy_link")}
               </Text>
             </TouchableOpacity>
           </ScrollView>
@@ -185,7 +178,7 @@ export function AiDisclosureModal({ visible, onAgree, onDecline }: Props) {
                   fontSize: 16,
                 }}
               >
-                I Agree — Analyze My Contract
+                {t("disclosure.agree")}
               </Text>
             </TouchableOpacity>
 
@@ -207,7 +200,7 @@ export function AiDisclosureModal({ visible, onAgree, onDecline }: Props) {
                   fontSize: 15,
                 }}
               >
-                No Thanks
+                {t("disclosure.decline")}
               </Text>
             </TouchableOpacity>
           </View>

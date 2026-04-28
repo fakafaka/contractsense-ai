@@ -1,10 +1,11 @@
 import { ScrollView, Text, View, TouchableOpacity, TextInput, ActivityIndicator, Alert, Platform } from "react-native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getLocales } from "expo-localization";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
+import { getLocales } from "expo-localization";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -27,6 +28,7 @@ import {
 
 export default function UploadScreen() {
   const colors = useColors();
+  const { t } = useTranslation();
   const [uploadMethod, setUploadMethod] = useState<"pdf" | "text" | "images" | null>(null);
   const [pdfFile, setPdfFile] = useState<{ name: string; uri: string; size: number } | null>(null);
   const [imageFiles, setImageFiles] = useState<{ uri: string; mimeType?: string; fileName?: string; fileSize?: number }[]>([]);
@@ -103,17 +105,17 @@ export default function UploadScreen() {
               trpcUtils.contracts.usageStatus.invalidate();
               setIsPurchasing(false);
               Alert.alert(
-                "Purchase Successful",
+                t("upload.purchase_success"),
                 data.creditsAdded > 0
-                  ? `${data.creditsAdded} credits added to your account.`
-                  : "Credits already applied to your account.",
+                  ? t("upload.purchase_success_added", { count: data.creditsAdded })
+                  : t("upload.purchase_success_applied"),
               );
             } else {
               await finishIapTransaction(purchase);
-              Alert.alert("Purchase Error", data.error || "Failed to validate purchase.");
+              Alert.alert(t("upload.purchase_error"), data.error || t("upload.purchase_error"));
             }
           } catch (err: any) {
-            Alert.alert("Purchase Error", err.message || "Failed to process purchase.");
+            Alert.alert(t("upload.purchase_error"), err.message || t("upload.purchase_error"));
           } finally {
             setIsPurchasing(false);
           }
@@ -122,7 +124,7 @@ export default function UploadScreen() {
         errorListener = purchaseErrorListener((error: any) => {
           setIsPurchasing(false);
           if (error.message && !error.message.toLowerCase().includes("cancel")) {
-            Alert.alert("Purchase Failed", error.message);
+            Alert.alert(t("upload.purchase_failed"), error.message);
           }
         });
       } catch (err) {
@@ -147,7 +149,7 @@ export default function UploadScreen() {
       setIsRestoring(true);
       const purchases = await getRestorePurchases();
       if (!purchases || purchases.length === 0) {
-        Alert.alert("No Purchases Found", "No previous purchases were found for this Apple ID.");
+        Alert.alert(t("upload.no_purchases_found"), t("upload.no_purchases_body"));
         return;
       }
       // Re-validate each restored purchase against the server
@@ -175,12 +177,12 @@ export default function UploadScreen() {
       }
       trpcUtils.contracts.usageStatus.invalidate();
       if (creditsRestored > 0) {
-        Alert.alert("Purchases Restored", `${creditsRestored} credits have been restored to your account.`);
+        Alert.alert(t("upload.purchases_restored"), t("upload.purchases_restored_credits", { count: creditsRestored }));
       } else {
-        Alert.alert("Purchases Restored", "Your purchases have been restored. Credits were already applied to your account.");
+        Alert.alert(t("upload.purchases_restored"), t("upload.purchases_restored_applied"));
       }
     } catch (err: any) {
-      Alert.alert("Restore Failed", err.message || "Unable to restore purchases. Please try again.");
+      Alert.alert(t("upload.restore_failed"), err.message || t("upload.restore_failed_body"));
     } finally {
       setIsRestoring(false);
     }
@@ -194,7 +196,7 @@ export default function UploadScreen() {
     } catch (err: any) {
       setIsPurchasing(false);
       if (!err.message?.toLowerCase().includes("cancel")) {
-        Alert.alert("Purchase Failed", err.message || "Unable to start purchase.");
+        Alert.alert(t("upload.purchase_failed"), err.message || t("upload.purchase_failed_body"));
       }
     }
   };
@@ -212,7 +214,7 @@ export default function UploadScreen() {
       }
       if (status.status === "cancelled") {
         activeJobIdRef.current = null;
-        throw new Error("Analysis was cancelled");
+        throw new Error(t("upload.error_analysis_cancelled"));
       }
       if (status.status === "failed") {
         activeJobIdRef.current = null;
@@ -221,16 +223,13 @@ export default function UploadScreen() {
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
     activeJobIdRef.current = null;
-    throw new Error("Analysis timed out. Please try again.");
+    throw new Error(t("upload.error_analysis_timeout"));
   };
 
   const handlePickImages = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert(
-        "Photo Library Permission Required",
-        "Please allow photo library access in Settings to select contract photos.",
-      );
+      Alert.alert(t("upload.error_photo_permission"), t("upload.error_photo_permission_body"));
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -255,10 +254,7 @@ export default function UploadScreen() {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert(
-          "Camera Permission Required",
-          "Please allow camera access in Settings to capture contract photos.",
-        );
+        Alert.alert(t("upload.error_camera_permission"), t("upload.error_camera_permission_body"));
         return;
       }
 
@@ -284,7 +280,7 @@ export default function UploadScreen() {
       if (!contractName.trim()) setContractName("Photo Contract");
     } catch (error) {
       console.error("Camera error:", error);
-      Alert.alert("Camera Error", "Failed to open camera. Please try again.");
+      Alert.alert(t("upload.error_camera"), t("upload.error_camera_body"));
     }
   };
 
@@ -300,10 +296,10 @@ export default function UploadScreen() {
       }
 
       const file = result.assets[0];
-      
+
       // Check file size (10MB limit)
       if (file.size && file.size > 10 * 1024 * 1024) {
-        Alert.alert("File Too Large", "PDF file must be less than 10MB");
+        Alert.alert(t("upload.error_file_too_large"), t("upload.error_file_too_large_body"));
         return;
       }
 
@@ -316,7 +312,7 @@ export default function UploadScreen() {
       setUploadMethod("pdf");
     } catch (error) {
       console.error("Error picking PDF:", error);
-      Alert.alert("Error", "Failed to pick PDF file");
+      Alert.alert(t("upload.error_pick_pdf"), t("upload.error_pick_pdf_body"));
     }
   };
 
@@ -326,13 +322,7 @@ export default function UploadScreen() {
     setUploadMethod(null);
   };
 
-  // The actual analysis work — no consent check. Called either directly from
-  // handleAnalyze (when consent was already granted) or from handleConsentAgree
-  // (after the user taps "I Agree"). Split out so the post-consent resume does
-  // NOT re-enter the consent gate with stale React state (the reason Apple saw
-  // "I Agree" appear to do nothing: setHasConsented(true) hadn't committed yet,
-  // so the recursive handleAnalyze call hit the gate again and re-opened the
-  // modal).
+  // The actual analysis work — no consent check.
   const runAnalysis = async () => {
     setAnalysisStage("uploading");
 
@@ -393,44 +383,40 @@ export default function UploadScreen() {
     } catch (error: any) {
       activeJobIdRef.current = null;
       console.error("Analysis error:", error);
-      const knownMessages = ["Analysis was cancelled", "Analysis timed out. Please try again."];
+      const knownMessages = [
+        t("upload.error_analysis_cancelled"),
+        t("upload.error_analysis_timeout"),
+      ];
       const message =
         typeof error?.message === "string" && knownMessages.includes(error.message)
           ? error.message
-          : "Unable to analyze this document. Please try a different file or paste the contract text directly.";
-      Alert.alert("Analysis Failed", message);
+          : t("upload.error_analysis_default");
+      Alert.alert(t("upload.error_analysis_failed"), message);
       setAnalysisStage(null);
     }
   };
 
-  // Validation + consent gate. If consent is already granted, runs the analysis
-  // immediately. Otherwise stashes runAnalysis in the ref and opens the modal.
+  // Validation + consent gate.
   const handleAnalyze = async () => {
     if (!contractName.trim()) {
-      Alert.alert("Missing Name", "Please enter a contract name");
+      Alert.alert(t("upload.error_missing_name"), t("upload.error_missing_name_body"));
       return;
     }
 
     if (uploadMethod === "text" && contractText.trim().length < 10) {
-      Alert.alert("Invalid Text", "Please enter at least 10 characters of contract text");
+      Alert.alert(t("upload.error_invalid_text"), t("upload.error_invalid_text_body"));
       return;
     }
 
     if (uploadMethod === "pdf" && !pdfFile) {
-      Alert.alert("Missing File", "Please select a PDF file");
+      Alert.alert(t("upload.error_missing_pdf"), t("upload.error_missing_pdf_body"));
       return;
     }
     if (uploadMethod === "images" && imageFiles.length === 0) {
-      Alert.alert("Missing Photos", "Please select or capture at least one photo");
+      Alert.alert(t("upload.error_missing_photos"), t("upload.error_missing_photos_body"));
       return;
     }
 
-    // AI disclosure consent gate (Apple Guideline 5.1.1(i) / 5.1.2(i)).
-    // Returning users: useAiConsent's useEffect has already hydrated
-    // hasConsented=true from AsyncStorage by the time the user taps Analyze,
-    // so this branch is skipped and analysis runs immediately.
-    // First-time users: stash runAnalysis (NOT handleAnalyze — that would
-    // re-enter the gate with stale state) and open the modal.
     if (!hasConsented) {
       pendingAnalysisRef.current = runAnalysis;
       setShowDisclosureModal(true);
@@ -440,26 +426,18 @@ export default function UploadScreen() {
     await runAnalysis();
   };
 
-  // "I Agree" — persist consent, close modal, then invoke the stashed
-  // runAnalysis directly. We deliberately do NOT call handleAnalyze here
-  // because setHasConsented(true) hasn't committed yet in this tick, so
-  // going back through the gate would re-open the modal (the exact bug
-  // Apple reported).
   const handleConsentAgree = useCallback(async () => {
     await grantConsent();
     setShowDisclosureModal(false);
     const resume = pendingAnalysisRef.current;
     pendingAnalysisRef.current = null;
     if (resume) {
-      // Fire without awaiting so the modal-close animation is not blocked.
-      // Errors inside runAnalysis are already handled by its own try/catch.
       Promise.resolve(resume()).catch((err) => {
         console.error("[Consent] resume failed:", err);
       });
     }
   }, [grantConsent]);
 
-  // "No Thanks" — drop the pending analysis and close the modal.
   const handleConsentDecline = useCallback(() => {
     pendingAnalysisRef.current = null;
     setShowDisclosureModal(false);
@@ -484,17 +462,17 @@ export default function UploadScreen() {
     return (
       <ScreenContainer className="p-6 items-center justify-center">
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text className="text-2xl font-bold text-foreground mt-6">Analyzing Contract...</Text>
+        <Text className="text-2xl font-bold text-foreground mt-6">{t("upload.analyzing_title")}</Text>
         <Text className="text-base text-muted mt-3 text-center max-w-xs">
           {analysisStage === "uploading"
-            ? "Uploading..."
+            ? t("upload.stage_uploading")
             : analysisStage === "processing"
-              ? "Processing..."
-              : "Analyzing..."}
+              ? t("upload.stage_processing")
+              : t("upload.stage_analyzing")}
         </Text>
         <View className="mt-8 bg-surface rounded-xl p-5 border border-border max-w-sm">
           <Text className="text-sm text-muted text-center leading-relaxed">
-            Our AI is reading only the first 10 pages and identifying key terms, obligations, risks, and red flags.
+            {t("upload.ai_note")}
           </Text>
         </View>
         <TouchableOpacity
@@ -503,7 +481,7 @@ export default function UploadScreen() {
           disabled={cancelJobMutation.isPending}
           onPress={handleCancelAnalysis}
         >
-          <Text className="text-foreground font-semibold">Cancel</Text>
+          <Text className="text-foreground font-semibold">{t("upload.cancel")}</Text>
         </TouchableOpacity>
       </ScreenContainer>
     );
@@ -528,12 +506,12 @@ export default function UploadScreen() {
             >
               <IconSymbol size={24} name="chevron.right" color={colors.foreground} style={{ transform: [{ rotate: "180deg" }] }} />
             </TouchableOpacity>
-            <Text className="text-3xl font-bold text-foreground flex-1">Upload Contract</Text>
+            <Text className="text-3xl font-bold text-foreground flex-1">{t("upload.title")}</Text>
             <TouchableOpacity
               style={{ opacity: 1 }}
               onPress={() => router.push("/history" as any)}
             >
-              <Text className="text-base font-semibold" style={{ color: colors.primary }}>History</Text>
+              <Text className="text-base font-semibold" style={{ color: colors.primary }}>{t("upload.history")}</Text>
             </TouchableOpacity>
           </View>
 
@@ -544,10 +522,10 @@ export default function UploadScreen() {
               style={{ backgroundColor: colors.primary + "12", borderColor: colors.primary }}
             >
               <Text className="text-base font-bold text-foreground text-center mb-1">
-                No credits remaining
+                {t("upload.no_credits_title")}
               </Text>
               <Text className="text-sm text-muted text-center mb-4">
-                Buy 5 more analyses for $0.99
+                {t("upload.no_credits_subtitle")}
               </Text>
               <TouchableOpacity
                 className="bg-primary px-6 py-3 rounded-full"
@@ -557,12 +535,12 @@ export default function UploadScreen() {
               >
                 <Text className="text-white font-bold text-center">
                   {isPurchasing
-                    ? "Processing..."
+                    ? t("upload.processing")
                     : !iapReady
-                      ? "Loading..."
+                      ? t("upload.loading")
                       : iapProduct?.localizedPrice
-                        ? `Buy 5 credits — ${iapProduct.localizedPrice}`
-                        : "Buy 5 credits — $0.99"}
+                        ? t("upload.buy_credits_price", { price: iapProduct.localizedPrice })
+                        : t("upload.buy_credits_default")}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -572,7 +550,7 @@ export default function UploadScreen() {
                 onPress={handleRestorePurchases}
               >
                 <Text className="text-sm text-center" style={{ color: colors.primary }}>
-                  {isRestoring ? "Restoring..." : "Restore Purchases"}
+                  {isRestoring ? t("upload.restoring") : t("upload.restore_purchases")}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -588,9 +566,9 @@ export default function UploadScreen() {
               >
                 <View className="items-center gap-3">
                   <IconSymbol size={48} name="doc.text.fill" color={colors.primary} />
-                  <Text className="text-lg font-semibold text-foreground">Upload PDF File</Text>
-                <Text className="text-sm text-muted text-center">Choose a PDF contract from your device</Text>
-                  <Text className="text-xs text-muted">Max 10MB • first 10 pages analyzed</Text>
+                  <Text className="text-lg font-semibold text-foreground">{t("upload.method_pdf_title")}</Text>
+                  <Text className="text-sm text-muted text-center">{t("upload.method_pdf_subtitle")}</Text>
+                  <Text className="text-xs text-muted">{t("upload.method_pdf_note")}</Text>
                 </View>
               </TouchableOpacity>
 
@@ -601,10 +579,11 @@ export default function UploadScreen() {
               >
                 <View className="items-center gap-3">
                   <IconSymbol size={48} name="doc.text.fill" color={colors.primary} />
-                  <Text className="text-lg font-semibold text-foreground">Paste Contract Text</Text>
-                  <Text className="text-sm text-muted text-center">Copy and paste the contract text directly</Text>
+                  <Text className="text-lg font-semibold text-foreground">{t("upload.method_text_title")}</Text>
+                  <Text className="text-sm text-muted text-center">{t("upload.method_text_subtitle")}</Text>
                 </View>
               </TouchableOpacity>
+
               <TouchableOpacity
                 className="bg-surface rounded-2xl p-6 border-2 border-border"
                 style={{ opacity: 1 }}
@@ -612,10 +591,11 @@ export default function UploadScreen() {
               >
                 <View className="items-center gap-3">
                   <IconSymbol size={48} name="photo.on.rectangle.angled" color={colors.primary} />
-                  <Text className="text-lg font-semibold text-foreground">Select Document Photos</Text>
-                  <Text className="text-sm text-muted text-center">Choose multiple photos from gallery</Text>
+                  <Text className="text-lg font-semibold text-foreground">{t("upload.method_photos_title")}</Text>
+                  <Text className="text-sm text-muted text-center">{t("upload.method_photos_subtitle")}</Text>
                 </View>
               </TouchableOpacity>
+
               <TouchableOpacity
                 className="bg-surface rounded-2xl p-6 border-2 border-border"
                 style={{ opacity: 1 }}
@@ -623,8 +603,8 @@ export default function UploadScreen() {
               >
                 <View className="items-center gap-3">
                   <IconSymbol size={48} name="camera.fill" color={colors.primary} />
-                  <Text className="text-lg font-semibold text-foreground">Capture with Camera</Text>
-                  <Text className="text-sm text-muted text-center">Take one or more photos</Text>
+                  <Text className="text-lg font-semibold text-foreground">{t("upload.method_camera_title")}</Text>
+                  <Text className="text-sm text-muted text-center">{t("upload.method_camera_subtitle")}</Text>
                 </View>
               </TouchableOpacity>
             </View>
@@ -653,10 +633,10 @@ export default function UploadScreen() {
               </View>
 
               <View>
-                <Text className="text-base font-semibold text-foreground mb-2">Contract Name</Text>
+                <Text className="text-base font-semibold text-foreground mb-2">{t("upload.contract_name_label")}</Text>
                 <TextInput
                   className="bg-surface rounded-xl px-4 py-3 border border-border text-foreground"
-                  placeholder="e.g., Service Agreement"
+                  placeholder={t("upload.contract_name_placeholder")}
                   placeholderTextColor={colors.muted}
                   value={contractName}
                   onChangeText={setContractName}
@@ -664,22 +644,23 @@ export default function UploadScreen() {
               </View>
             </View>
           )}
+
           {uploadMethod === "images" && (
             <View className="gap-4">
               <View className="bg-surface rounded-2xl p-5 border border-border">
                 <Text className="text-base font-semibold text-foreground">
-                  {imageFiles.length} photo(s) selected
+                  {t("upload.photos_selected", { count: imageFiles.length })}
                 </Text>
                 <Text className="text-sm text-muted mt-1">
-                  Photos are merged in order into one document for analysis.
+                  {t("upload.photos_note")}
                 </Text>
               </View>
               <View className="flex-row gap-3">
                 <TouchableOpacity className="flex-1 bg-surface rounded-xl p-3 border border-border" onPress={handlePickImages}>
-                  <Text className="text-center font-semibold" style={{ color: colors.primary }}>Reselect</Text>
+                  <Text className="text-center font-semibold" style={{ color: colors.primary }}>{t("upload.reselect")}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity className="flex-1 bg-surface rounded-xl p-3 border border-border" onPress={handleCaptureImage}>
-                  <Text className="text-center font-semibold" style={{ color: colors.primary }}>Add Camera Page</Text>
+                  <Text className="text-center font-semibold" style={{ color: colors.primary }}>{t("upload.add_camera_page")}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -689,10 +670,10 @@ export default function UploadScreen() {
           {uploadMethod === "text" && (
             <View className="gap-4">
               <View>
-                <Text className="text-base font-semibold text-foreground mb-2">Contract Name</Text>
+                <Text className="text-base font-semibold text-foreground mb-2">{t("upload.contract_name_label")}</Text>
                 <TextInput
                   className="bg-surface rounded-xl px-4 py-3 border border-border text-foreground"
-                  placeholder="e.g., Service Agreement"
+                  placeholder={t("upload.contract_name_placeholder")}
                   placeholderTextColor={colors.muted}
                   value={contractName}
                   onChangeText={setContractName}
@@ -701,12 +682,12 @@ export default function UploadScreen() {
 
               <View>
                 <View className="flex-row items-center justify-between mb-2">
-                  <Text className="text-base font-semibold text-foreground">Contract Text</Text>
-                  <Text className="text-sm text-muted">{contractText.length} characters</Text>
+                  <Text className="text-base font-semibold text-foreground">{t("upload.contract_text_label")}</Text>
+                  <Text className="text-sm text-muted">{t("upload.characters", { count: contractText.length })}</Text>
                 </View>
                 <TextInput
                   className="bg-surface rounded-xl px-4 py-3 border border-border text-foreground"
-                  placeholder="Paste your contract text here..."
+                  placeholder={t("upload.contract_text_placeholder")}
                   placeholderTextColor={colors.muted}
                   value={contractText}
                   onChangeText={setContractText}
@@ -727,7 +708,7 @@ export default function UploadScreen() {
                 }}
               >
                 <Text className="text-center font-semibold" style={{ color: colors.primary }}>
-                  Choose Different Method
+                  {t("upload.choose_different")}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -739,9 +720,7 @@ export default function UploadScreen() {
               <View className="flex-row items-start gap-3">
                 <IconSymbol size={20} name="exclamationmark.triangle.fill" color={colors.warning} />
                 <Text className="flex-1 text-xs text-muted leading-relaxed">
-                  This analysis is for informational purposes only and does not constitute legal
-                  advice. Only the first 10 pages (or equivalent first text section) are analyzed.
-                  New users get 3 free analyses.
+                  {t("upload.disclaimer_body")}
                 </Text>
               </View>
             </View>
@@ -749,9 +728,7 @@ export default function UploadScreen() {
           {uploadMethod && usage && (
             <View className="bg-surface rounded-xl p-4 border border-border">
               <Text className="text-sm text-muted">
-                Remaining credits:{" "}
-                <Text className="text-foreground font-semibold">{usage.remainingCredits}</Text>.{" "}
-                New users get 3 free analyses. Buy 5 more for $0.99.
+                {t("upload.credits_remaining", { count: usage.remainingCredits })}
               </Text>
             </View>
           )}
@@ -772,7 +749,7 @@ export default function UploadScreen() {
               }
             >
               <Text className="text-white font-bold text-lg text-center">
-                {analysisStage ? "Analyzing..." : "Analyze Contract"}
+                {analysisStage ? t("upload.analyzing_button") : t("upload.analyze_button")}
               </Text>
             </TouchableOpacity>
           )}
